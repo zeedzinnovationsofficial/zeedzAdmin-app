@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "127577484456",
+    "project_id": "zeedzattendance-338c1",
+    "storage_bucket": "zeedzattendance-338c1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:127577484456:android:198930f317878a8c14e69d",
+        "android_client_info": {
+          "package_name": "com.zeedz_attendance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAm4_scivtSUqU1KL3El8TLTktyz3aw46Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
