@@ -18,12 +18,6 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // await Firebase.initializeApp();
-  // await Supabase.initialize(
-  //   url: 'https://zkgcjvricbdqbjdlaaan.supabase.co',
-  //   anonKey:
-  //       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprZ2NqdnJpY2JkcWJqZGxhYWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1NjE2NzAsImV4cCI6MjA4NzEzNzY3MH0.fJcoCSoYPL_6Wd5OvvoucPdxdpwWZmdwJuAi0RCjVYY',
-  // );
 
   await dotenv.load(fileName: ".env");
 
