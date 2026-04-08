@@ -1,6 +1,7 @@
 import 'package:alarm/alarm.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
@@ -17,12 +18,37 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // await Firebase.initializeApp();
+  // await Supabase.initialize(
+  //   url: 'https://zkgcjvricbdqbjdlaaan.supabase.co',
+  //   anonKey:
+  //       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprZ2NqdnJpY2JkcWJqZGxhYWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1NjE2NzAsImV4cCI6MjA4NzEzNzY3MH0.fJcoCSoYPL_6Wd5OvvoucPdxdpwWZmdwJuAi0RCjVYY',
+  // );
+
+  await dotenv.load(fileName: ".env");
+
+  const isProd = bool.fromEnvironment('dart.vm.product');
+
+  final supabaseUrl = isProd
+      ? dotenv.env['PROD_SUPABASE_URL']
+      : dotenv.env['DEV_SUPABASE_URL'];
+
+  final supabaseKey = isProd
+      ? dotenv.env['PROD_SUPABASE_ANON_KEY']
+      : dotenv.env['DEV_SUPABASE_ANON_KEY'];
+
+  /// ADD HERE
+  if (supabaseUrl == null || supabaseKey == null) {
+    throw Exception("❌ Missing Supabase ENV values");
+  }
+
+  ///  DEBUG PRINT
+  print("🔥 ENV: ${isProd ? "PROD" : "DEV"}");
+  print("🌐 URL: $supabaseUrl");
+
   await Firebase.initializeApp();
-  await Supabase.initialize(
-    url: 'https://zkgcjvricbdqbjdlaaan.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprZ2NqdnJpY2JkcWJqZGxhYWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1NjE2NzAsImV4cCI6MjA4NzEzNzY3MH0.fJcoCSoYPL_6Wd5OvvoucPdxdpwWZmdwJuAi0RCjVYY',
-  );
+
+  await Supabase.initialize(url: supabaseUrl!, anonKey: supabaseKey!);
   Supabase.instance.client.auth.onAuthStateChange.listen((data) {
     final event = data.event;
 
