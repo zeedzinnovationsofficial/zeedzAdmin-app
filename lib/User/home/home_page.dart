@@ -74,6 +74,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
     final role = punch.role;

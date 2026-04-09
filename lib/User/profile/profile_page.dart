@@ -93,6 +93,7 @@ class _ProfilePageState extends State<ProfilePage> {
               value: user?.email ?? "No Email",
               context: context,
             ),
+           
 
             /// PHONE
             buildTile(
@@ -269,7 +270,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       padding: const EdgeInsets.all(12),
-      height: size.height * 0.08,
+      height: size.height * 0.0822,
       width: size.width * 0.89,
       decoration: BoxDecoration(
         color: AppColors.white,

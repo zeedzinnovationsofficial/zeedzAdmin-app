@@ -37,7 +37,7 @@ class _AbsentEmployeesPageState extends State<AbsentEmployeesPage> {
                     vertical: 8,
                   ),
                   padding: const EdgeInsets.all(12),
-                  height: size.height * 0.12,
+                  height: size.height * 0.122,
                   decoration: BoxDecoration(
                     color: AppColors.white,
                     borderRadius: BorderRadius.circular(10),

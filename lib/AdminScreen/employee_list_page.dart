@@ -134,7 +134,7 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
                 padding: EdgeInsets.all(12),
-                height: size.height * 0.13,
+                height: size.height * 0.133,
                 width: size.width * 0.3,
                 decoration: BoxDecoration(
                   color: AppColors.white,

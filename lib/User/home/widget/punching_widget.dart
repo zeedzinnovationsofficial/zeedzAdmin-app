@@ -10,8 +10,9 @@ class PunchingWidget extends StatelessWidget {
     super.key,
     required this.punchStatus,
     required this.onTap,
-    required this.isLoading,
+    required this.isLoading, 
   });
+  
 
   @override
   Widget build(BuildContext context) {
