@@ -14,6 +14,7 @@ class PunchProvider extends ChangeNotifier {
   List<String> todayLeaveUserIds = [];
   List<Map<String, dynamic>> leaveList = [];
   List<Map<String, dynamic>> filteredAttendance = [];
+  
 
   final supabase = Supabase.instance.client;
 
@@ -59,7 +60,8 @@ class PunchProvider extends ChangeNotifier {
   String? todayStatus;
   int monthlyLeaveDays = 0;
   int _statsRequestId = 0;
-
+List<DateTime> holidays = [];
+Map<String, String> holidayReasons = {};
   // Leave Data
   DateTime? startDate;
   DateTime? endDate;
@@ -107,6 +109,7 @@ class PunchProvider extends ChangeNotifier {
       notifyListeners();
     });
   }
+  
 
   // Future<void> refreshAll() async {
   //   await loadAttendance();
@@ -116,17 +119,19 @@ class PunchProvider extends ChangeNotifier {
   //   notifyListeners();
   // }
   //leave date
-
+Future<void> loadLeavePageData() async {
+  await fetchLeaveList(); // ONLY THIS
+}
   Future<void> initializeApp() async {
     await loadProfile();
 
-    await Future.wait([
-      loadAllAttendance(),
-      loadTodayPunch(),
-      loadMonthlyLeaveCount(),
-      loadEmployees(),
-      loadTodayLeave(),
-    ]);
+   await loadHolidays(); // ✅ MUST BE FIRST
+
+await loadAllAttendance();
+await loadTodayPunch();
+await loadMonthlyLeaveCount();
+await loadEmployees();
+await loadTodayLeave();
     if (role == 'superadmin' || role == 'admin' || role == 'hr') {
       await loadSuperAdminStats(); //  USE DAILY STATS
     }
@@ -135,6 +140,7 @@ class PunchProvider extends ChangeNotifier {
     isLoaded = true;
     notifyListeners();
   }
+  
 
   Future<void> loadProfile() async {
     final supabase = Supabase.instance.client;
@@ -198,6 +204,19 @@ class PunchProvider extends ChangeNotifier {
       final now = DateTime.now();
       final dateOnly = DateFormat('yyyy-MM-dd').format(now);
 
+
+if (isHoliday(now)) {
+  punchInTime = null;
+  punchOutTime = null;
+  isRunning = false;
+  punchStatus = "holiday";
+  statusText = "🎉 Holiday";
+
+  todayStatus = "holiday";
+
+  notifyListeners();
+  return;
+}
       /// CHECK EXISTING PUNCH
       final existing = await supabase
           .from('attendance')
@@ -318,85 +337,100 @@ class PunchProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loadTodayPunch() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
+ Future<void> loadTodayPunch() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
 
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  final now = DateTime.now();
+  final today = DateFormat('yyyy-MM-dd').format(now);
 
-    ///  FIRST CHECK LEAVE
-    final leaveToday = await supabase
-        .from('leave_requests')
-        .select()
-        .eq('user_id', user.id)
-        .eq('status', 'approved')
-        .lte('start_date', today)
-        .gte('end_date', today)
-        .maybeSingle();
+  punchInTime = null;
+  punchOutTime = null;
+  isRunning = false;
+  punchStatus = "in";
+  statusText = "Punch In";
+  todayStatus = "";
+  locationAddress = "--";
 
-    // Reset
-    punchInTime = null;
-    punchOutTime = null;
-    isRunning = false;
-    punchStatus = "in";
-    statusText = "Not Punched";
-    todayStatus = null;
+  final leaveToday = await supabase
+      .from('leave_requests')
+      .select()
+      .eq('user_id', user.id)
+      .eq('status', 'approved')
+      .lte('start_date', today)
+      .gte('end_date', today)
+      .maybeSingle();
 
-    ///  If Leave Approved → Show Leave & Return
-    if (leaveToday != null) {
-      todayStatus = 'leave';
-      punchStatus = "leave";
-      statusText = "On Leave";
-      notifyListeners();
-      return;
-    }
-
-    /// NORMAL ATTENDANCE CHECK
-    final data = await supabase
-        .from('attendance')
-        .select('punch_in, punch_out, location, status')
-        .eq('user_id', user.id)
-        .eq('date', today)
-        .maybeSingle();
-
-    todayStatus = data?['status'];
-
-    if (data != null) {
-      if (data['punch_in'] != null) {
-        punchInTime = DateTime.parse(data['punch_in']);
-      }
-
-      locationAddress = data['location'] ?? "--";
-
-      /// 1️⃣ If rejected
-      if (todayStatus == 'rejected') {
-        punchStatus = "absent";
-        statusText = "Absent";
-      }
-      /// 2️⃣ If punch out exists → user finished work
-      else if (data['punch_out'] != null) {
-        punchOutTime = DateTime.parse(data['punch_out']);
-        punchStatus = "done";
-        statusText = "Punched Out";
-      }
-      /// 3️⃣ If approved but no punch out
-      else if (todayStatus == 'approved') {
-        punchStatus = "approved";
-        statusText = "Present";
-      }
-      /// 4️⃣ User punched in but waiting approval
-      else {
-        isRunning = true;
-        punchStatus = "out";
-        statusText = "Pending";
-      }
-    }
-
+  if (leaveToday != null) {
+    todayStatus = 'leave';
+    punchStatus = "leave";
+    statusText = "On Leave";
     notifyListeners();
+    return;
   }
-  // HELPERS
 
-  String get todayFormatted =>
+  final holidayRes = await supabase
+      .from('holidays')
+      .select()
+      .eq('holiday_date', today);
+
+  if (holidayRes.isNotEmpty) {
+    todayStatus = "holiday";
+    punchStatus = "holiday";
+    statusText = "Holiday";
+    notifyListeners();
+    return;
+  }
+
+  final data = await supabase
+      .from('attendance')
+      .select('punch_in, punch_out, location, status')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .maybeSingle();
+
+  if (data != null) {
+    todayStatus = data['status'];
+
+    if (data['punch_in'] != null) {
+      punchInTime = DateTime.parse(data['punch_in']);
+    }
+
+    if (data['punch_out'] != null) {
+      punchOutTime = DateTime.parse(data['punch_out']);
+    }
+
+    locationAddress = data['location'] ?? "--";
+
+    if (todayStatus == 'rejected') {
+      punchStatus = "absent";
+      statusText = "Absent";
+
+    } else if (punchOutTime != null) {
+      punchStatus = "done";
+      statusText = "Punched Out";
+
+    } else if (todayStatus == 'approved') {
+      punchStatus = "approved";
+      statusText = "Present";
+
+    } else if (punchInTime != null) {
+      punchStatus = "out";
+      statusText = "Pending";
+
+    } else {
+      punchStatus = "in";
+      statusText = "Punch In";
+    }
+
+  } else {
+    todayStatus = "";
+    punchStatus = "in";
+    statusText = "Punch In";
+  }
+
+  notifyListeners();
+} String get todayFormatted =>
       DateFormat("EEEE, MMMM d yyyy").format(DateTime.now());
 
   Duration get totalWorkedDuration {
@@ -612,6 +646,49 @@ class PunchProvider extends ChangeNotifier {
   }
 
   void resetData() {}
+  // =====================
+// HOLIDAY FUNCTIONS
+// =====================
+
+Future<void> loadHolidays() async {
+  final res = await supabase
+      .from('holidays')
+      .select('holiday_date, name');
+
+  holidays = [];
+  holidayReasons = {};
+
+  for (final item in res) {
+    final rawDate = item['holiday_date'];
+
+    DateTime date = DateTime.parse(rawDate.toString());
+
+    /// REMOVE TIME
+    date = DateTime(date.year, date.month, date.day);
+
+    final key =
+        "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+    holidays.add(date);
+    holidayReasons[key] = item['name'] ?? "Holiday";
+  }
+
+  print("HOLIDAYS: $holidayReasons");
+
+  notifyListeners();
+}bool isHoliday(DateTime date) {
+  final key =
+      "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+  return holidayReasons.containsKey(key);
+}
+
+String getHolidayReason(DateTime date) {
+  final key =
+      "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+  return holidayReasons[key] ?? "Holiday";
+}
   //leave approvel container
   Future<List<Map<String, dynamic>>> fetchMyLeaves() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -1210,4 +1287,8 @@ class PunchProvider extends ChangeNotifier {
     selectedMonth = month;
     notifyListeners();
   }
+
+ 
+
+ 
 }

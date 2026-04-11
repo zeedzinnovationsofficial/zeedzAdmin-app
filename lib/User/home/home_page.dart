@@ -24,6 +24,7 @@ import 'package:zeedz_attendance/User/home/widget/punching_widget.dart';
 import 'package:zeedz_attendance/User/profile/profile_page.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/attendance_summary_section.dart';
+import 'package:zeedz_attendance/widget/summaryrowskeleton.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
 
@@ -36,16 +37,31 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool isLoading = false;
+  bool isSummaryLoading = true;
   DateTime selectedMonth = DateTime.now();
   DateTime? startDate;
   DateTime? endDate;
+ static bool isFirstLoad = true;
+
   @override
   void initState() {
     super.initState();
+Future.delayed(Duration.zero, () async {
+  final response = await Supabase.instance.client
+      .from('holidays')
+      .select();
 
-    final provider = context.read<PunchProvider>();
+  setState(() {
+    holidays = List<Map<String, dynamic>>.from(response);
+  });
+});
 
-    _loadHomeData(provider);
+     
+   final provider = context.read<PunchProvider>();
+
+if (isFirstLoad) {
+  _loadHomeData(provider);
+}
     OneSignal.Notifications.addForegroundWillDisplayListener((event) {
       final notification = event.notification;
 
@@ -59,30 +75,53 @@ class _HomePageState extends State<HomePage> {
       );
     });
   }
+  List<Map<String, dynamic>> holidays = [];
+   bool get isHoliday => isHolidayToday(holidays);
+  
+Future<void> _loadHomeData(PunchProvider provider) async {
+ if (isFirstLoad) {
+  setState(() {
+    isSummaryLoading = true;
+  });
+}
 
-  Future<void> _loadHomeData(PunchProvider provider) async {
-    if (provider.isLoaded) return; // ✅ prevent reload
+  // 🔥 IMPORTANT: clear old values first
+ 
 
-    await provider.initializeApp();
+  await provider.initializeApp();
 
-    if (provider.role == 'superadmin' ||
-        provider.role == 'admin' ||
-        provider.role == 'hr') {
-      await provider.loadSuperAdminStats();
-    }
+  if (provider.role == 'superadmin' ||
+      provider.role == 'admin' ||
+      provider.role == 'hr') {
+    await provider.loadSuperAdminStats();
   }
+
+  if (!mounted) return;
+
+  setState(() {
+    isSummaryLoading = false;
+     isFirstLoad = false;
+  });
+}bool isHolidayToday(List holidays) {
+  final today = DateTime.now();
+  final todayStr =
+      "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+
+  return holidays.any((h) =>
+      h['holiday_date'].toString().split("T")[0] == todayStr);
+}
 
   @override
   Widget build(BuildContext context) {
-    
+ 
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
+    if (isSummaryLoading && isFirstLoad) {
+  return const WorkdayLoader();
+}
     final role = punch.role;
     print("Total Absent Count: ${punch.totalAbsentEmployees}");
 
-    if (!punch.isLoaded) {
-      return const WorkdayLoader();
-    }
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
@@ -501,39 +540,31 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
 
-                          SizedBox(height: size.height * 0.02),
+                         SizedBox(height: size.height * 0.02),
 
-                          SummaryRow(
-                            leftCard: SummaryCard(
-                              value: punch.totalEmployees.toString(),
-                              title: "Total Employees",
-                              valueColor: AppColors.green,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => EmployeesDetailsPage(
-                                      month: selectedMonth,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            rightCard: SummaryCard(
-                              value: punch.totalPendingEmployees.toString(),
-                              title: "Pending",
-                              valueColor: AppColors.orange,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        AttendanceApproval(hasBottomNav: false),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
+isSummaryLoading
+    ? const SummaryRowSkeleton()
+    : SummaryRow(
+        leftCard: SummaryCard(
+          value: punch.totalEmployees.toString(),
+          title: "Total Employees",
+          valueColor: Colors.green,
+          onTap: () {},
+        ),
+        rightCard: SummaryCard(
+          value: punch.totalPendingEmployees.toString(),
+          title: "Pending",
+          valueColor: Colors.orange,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AttendanceApproval(hasBottomNav: false),
+              ),
+            );
+          },
+        ),
+      ),
 
                           SizedBox(height: size.height * 0.015),
 
@@ -734,6 +765,7 @@ class _HomePageState extends State<HomePage> {
                             ),
 
                             SizedBox(height: size.height * 0.02),
+                            punch.isLoaded?
 
                             SummaryRow(
                               leftCard: SummaryCard(
@@ -766,10 +798,10 @@ class _HomePageState extends State<HomePage> {
                                   );
                                 },
                               ),
-                            ),
+                            ):const SummaryRowSkeleton(),
 
                             SizedBox(height: size.height * 0.015),
-
+                            punch.isLoaded?
                             SummaryRow(
                               leftCard: SummaryCard(
                                 value: punch.totalAbsentEmployees.toString(),
@@ -802,7 +834,7 @@ class _HomePageState extends State<HomePage> {
                                   );
                                 },
                               ),
-                            ),
+                            ): const SummaryRowSkeleton(),
                           ],
                           if (role == 'employee' || role == 'intern') ...[
                             const Text(
@@ -845,22 +877,23 @@ class _HomePageState extends State<HomePage> {
                           ],
                           SizedBox(height: size.height * 0.03),
 
-                          if (punch.punchStatus != "leave")
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: PunchingWidget(
-                                isLoading: isLoading,
-                                punchStatus: punch.punchStatus,
-                                onTap: () async {
-                                  if (punch.punchStatus == "in") {
-                                    await _handlePunchIn(context);
-                                  } else if (punch.punchStatus == "out") {
-                                    await punch.punchOut(context);
-                                  }
-                                },
-                              ),
-                            ),
-                        ],
+                         
+
+ if (!isHoliday && punch.punchStatus != "leave")
+  Padding(
+    padding: const EdgeInsets.all(12),
+    child: PunchingWidget(
+      isLoading: isLoading,
+      punchStatus: punch.punchStatus,
+      onTap: () async {
+        if (punch.punchStatus == "in") {
+          await _handlePunchIn(context);
+        } else if (punch.punchStatus == "out") {
+          await punch.punchOut(context);
+        }
+      },
+    ),
+  )],
                         SizedBox(height: size.height * 0.18),
                       ],
                     ),

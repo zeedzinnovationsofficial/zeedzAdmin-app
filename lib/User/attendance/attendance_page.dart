@@ -10,6 +10,7 @@ import 'package:zeedz_attendance/User/attendance/widget/leave_history.dart';
 import 'package:zeedz_attendance/User/attendance/widget/months.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
+import 'package:zeedz_attendance/widget/attendanceskeleton.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
 
@@ -195,7 +196,7 @@ class _AttendancePageState extends State<AttendancePage> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     if (isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold( body: AttendanceSkeleton(),);
     }
     final summary = calculateSummary();
     print("summary['absent'].toString() ${summary['absent'].toString()}");

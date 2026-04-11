@@ -29,6 +29,15 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
     loadData();
   }
 
+  DateTime? safeParse(dynamic value) {
+    if (value == null) return null;
+    try {
+      return DateTime.parse(value.toString());
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> loadData() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
@@ -45,7 +54,8 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
         .eq('status', 'approved');
 
     setState(() {
-      attendanceList = List<Map<String, dynamic>>.from(attendanceResponse);
+      attendanceList =
+          List<Map<String, dynamic>>.from(attendanceResponse);
       leaveList = List<Map<String, dynamic>>.from(leaveResponse);
       isLoading = false;
     });
@@ -54,7 +64,7 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
   Map<String, int> calculateSummary() {
     final provider = context.read<PunchProvider>();
 
-    final joiningDate = DateTime.parse(provider.joiningDate);
+    DateTime? joiningDate = safeParse(provider.joiningDate);
     final schedule = provider.workSchedule;
 
     int present = 0;
@@ -66,7 +76,9 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
     final year = now.year;
 
     final monthStart = DateTime(year, widget.month, 1);
-    final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
+    final start = joiningDate == null
+        ? monthStart
+        : (joiningDate.isAfter(monthStart) ? joiningDate : monthStart);
 
     final end = widget.month == now.month
         ? DateTime(year, widget.month, now.day)
@@ -74,19 +86,20 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
 
     bool isWorkingDay(DateTime d) {
       if (schedule == "mon_fri") {
-        return d.weekday != DateTime.saturday && d.weekday != DateTime.sunday;
+        return d.weekday != DateTime.saturday &&
+            d.weekday != DateTime.sunday;
       } else {
         return d.weekday != DateTime.sunday;
       }
     }
 
     for (final record in attendanceList) {
-      final recordDate = DateTime.parse(record['date']);
+      final recordDate = safeParse(record['date']);
+      if (recordDate == null) continue;
 
       if (recordDate.month != widget.month) continue;
       if (recordDate.isBefore(start)) continue;
       if (!isWorkingDay(recordDate)) continue;
-
       if (widget.month == now.month && recordDate.isAfter(now)) continue;
 
       final status = record['status'];
@@ -101,8 +114,10 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
     }
 
     for (final leaveItem in leaveList) {
-      final startDate = DateTime.parse(leaveItem['start_date']);
-      final endDate = DateTime.parse(leaveItem['end_date']);
+      final startDate = safeParse(leaveItem['start_date']);
+      final endDate = safeParse(leaveItem['end_date']);
+
+      if (startDate == null || endDate == null) continue;
 
       for (
         DateTime d = startDate;
@@ -112,7 +127,6 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
         if (d.month != widget.month) continue;
         if (d.isBefore(start)) continue;
         if (!isWorkingDay(d)) continue;
-
         if (widget.month == now.month && d.isAfter(now)) continue;
 
         leave++;
@@ -130,9 +144,10 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    // if (isLoading) {
-    //   return const Center(child: CircularProgressIndicator());
-    // }
+
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     final summary = calculateSummary();
 

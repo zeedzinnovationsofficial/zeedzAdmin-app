@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/AdminScreen/add_user_page.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
+import 'package:zeedz_attendance/widget/employeeskeleton.dart';
 
 class EmployeeListPage extends StatefulWidget {
   const EmployeeListPage({super.key});
@@ -116,7 +117,7 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
         future: fetchUsers(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+             return const SkeletonEmployeeList();
           }
 
           final users = snapshot.data!;

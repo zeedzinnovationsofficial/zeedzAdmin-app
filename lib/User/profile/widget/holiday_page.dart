@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:zeedz_attendance/widget/holidayskeleton.dart';
 
 class HolidayPage extends StatefulWidget {
   const HolidayPage({super.key});
@@ -131,7 +132,7 @@ class _HolidayPageState extends State<HolidayPage> {
       ),
 
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+    ?  SkeletonHoliday()
           : holidays.isEmpty
           ? const Center(child: Text("No holidays added"))
           : Padding(

@@ -4,9 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/User/home/widget/live_work_timer.dart';
+import 'package:zeedz_attendance/widget/punchstatusskeleton.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 
-class PunchStatusCard extends StatelessWidget {
+class PunchStatusCard extends StatefulWidget {
   final String statusText;
   final String inTime;
   final String outTime;
@@ -24,7 +25,21 @@ class PunchStatusCard extends StatelessWidget {
     required this.isRunning,
   });
 
-  Future<bool> checkIsHoliday() async {
+  @override
+  State<PunchStatusCard> createState() => _PunchStatusCardState();
+}
+
+class _PunchStatusCardState extends State<PunchStatusCard> {
+  Map<String, dynamic>? cachedHoliday;
+  late Future<void> initFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    initFuture = loadHolidayOnce();
+  }
+
+  Future<void> loadHolidayOnce() async {
     final today = DateTime.now();
 
     final dateStr =
@@ -33,22 +48,20 @@ class PunchStatusCard extends StatelessWidget {
     final response = await Supabase.instance.client
         .from('holidays')
         .select()
-        .eq('holiday_date', dateStr);
+        .eq('holiday_date', dateStr)
+        .maybeSingle();
 
-    return response.isNotEmpty;
+    cachedHoliday = response;
   }
-  
 
   @override
   Widget build(BuildContext context) {
-    final punch = context.watch<PunchProvider>();
+    final punch = context.select((PunchProvider p) => p);
     final size = MediaQuery.of(context).size;
-    final bool isIn = statusText == "Punched In";
-    final bool isOut = statusText == "Punched Out";
+
     final today = DateTime.now();
     final currentUserId = punch.supabase.auth.currentUser?.id;
 
-    /// 🧠 USER SCHEDULE
     final currentUser = punch.employeeList.firstWhere(
       (u) => u['id'] == currentUserId,
       orElse: () => {},
@@ -56,30 +69,63 @@ class PunchStatusCard extends StatelessWidget {
 
     final schedule = currentUser['work_schedule'] ?? "mon_sat";
 
-    /// 🧠 LEAVE CHECK
     bool isOnLeave = punch.leaveList.any((leave) {
       if (leave['user_id'] != currentUserId) return false;
+      if (leave['status'] != 'approved') return false;
 
       final start = DateTime.parse(leave['start_date']);
       final end = DateTime.parse(leave['end_date']);
 
-      return !today.isBefore(start) && !today.isAfter(end);
+      final todayOnly = DateTime(today.year, today.month, today.day);
+      final startOnly = DateTime(start.year, start.month, start.day);
+      final endOnly = DateTime(end.year, end.month, end.day);
+
+      return !todayOnly.isBefore(startOnly) &&
+          !todayOnly.isAfter(endOnly);
     });
 
-    return FutureBuilder<bool>(
-      future: checkIsHoliday(),
+    final isSunday = today.weekday == DateTime.sunday;
+    final isSaturday = today.weekday == DateTime.saturday;
+
+    final isWeekend = schedule == "mon_fri"
+        ? (isSaturday || isSunday)
+        : isSunday;
+
+    final isHoliday = !isOnLeave && (cachedHoliday != null || isWeekend);
+    final holidayName = cachedHoliday?['name'] ?? "Holiday";
+
+    String statusText;
+    Color bgColor;
+    Color textColor;
+
+    if (isOnLeave) {
+      statusText = "On Leave";
+      bgColor = AppColors.shadowroyalblue;
+      textColor = AppColors.royalblue;
+    } else if (isHoliday) {
+      statusText = "Holiday";
+      bgColor = Colors.blue.shade100;
+      textColor = Colors.blue;
+    } else if (punch.punchOutTime != null) {
+      statusText = "Punched Out";
+      bgColor = AppColors.shadowred;
+      textColor = Colors.red;
+    } else if (punch.punchInTime != null) {
+      statusText = "Pending";
+      bgColor = Colors.orange.shade100;
+      textColor = Colors.orange;
+    } else {
+      statusText = "Punch In";
+      bgColor = Colors.grey.shade200;
+      textColor = Colors.grey;
+    }
+
+    return FutureBuilder(
+      future: initFuture,
       builder: (context, snapshot) {
-        final dbHoliday = snapshot.data ?? false;
-
-        final isSunday = today.weekday == DateTime.sunday;
-        final isSaturday = today.weekday == DateTime.saturday;
-
-        final isWeekend = schedule == "mon_fri"
-            ? (isSaturday || isSunday)
-            : isSunday;
-
-        /// ✅ FINAL HOLIDAY (LEAVE HAS PRIORITY)
-        final isHoliday = !isOnLeave && (dbHoliday || isWeekend);
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const PunchStatusSkeleton();
+        }
 
         return Padding(
           padding: const EdgeInsets.all(12),
@@ -95,13 +141,12 @@ class PunchStatusCard extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                /// 🔹 HEADER
                 Row(
                   children: [
                     const Text(
                       "Punch Status",
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const Spacer(),
                     Container(
@@ -110,33 +155,13 @@ class PunchStatusCard extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: isOnLeave
-                            ? Colors.orange.shade100
-                            : isHoliday
-                                ? Colors.blue.shade100
-                                : isIn
-                                    ? AppColors.shadowgreen
-                                    : isOut
-                                        ? AppColors.shadowred
-                                        : Colors.grey.shade200,
+                        color: bgColor,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        isOnLeave
-                            ? "On Leave"
-                            : isHoliday
-                                ? "Holiday"
-                                : statusText,
+                        statusText,
                         style: TextStyle(
-                          color: isOnLeave
-                              ? Colors.orange
-                              : isHoliday
-                                  ? Colors.blue
-                                  : isIn
-                                      ? AppColors.green
-                                      : isOut
-                                          ? Colors.red
-                                          : Colors.grey,
+                          color: textColor,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -147,33 +172,27 @@ class PunchStatusCard extends StatelessWidget {
 
                 SizedBox(height: size.height * 0.01),
 
-                /// ⏱ TIME ROW (HIDE ON LEAVE / HOLIDAY)
                 if (!isOnLeave && !isHoliday)
-                  Consumer<PunchProvider>(
-                    builder: (context, provider, child) {
-                      return Row(
-                        children: [
-                          const Icon(Icons.access_time, size: 17),
-                          SizedBox(width: size.width * 0.02),
-                          Text(
-                            provider.punchInTime == null
-                                ? "In  --:--"
-                                : "In  ${DateFormat('hh:mm a').format(provider.punchInTime!)}",
-                          ),
-                          const Spacer(),
-                          const Icon(Icons.access_time, size: 17),
-                          SizedBox(width: size.width * 0.01),
-                          Text(
-                            provider.punchOutTime == null
-                                ? "Out  --:--"
-                                : "Out  ${DateFormat('hh:mm a').format(provider.punchOutTime!)}",
-                          ),
-                        ],
-                      );
-                    },
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time, size: 17),
+                      SizedBox(width: size.width * 0.02),
+                      Text(
+                        punch.punchInTime == null
+                            ? "In  --:--"
+                            : "In  ${DateFormat('hh:mm a').format(punch.punchInTime!)}",
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.access_time, size: 17),
+                      SizedBox(width: size.width * 0.01),
+                      Text(
+                        punch.punchOutTime == null
+                            ? "Out  --:--"
+                            : "Out  ${DateFormat('hh:mm a').format(punch.punchOutTime!)}",
+                      ),
+                    ],
                   ),
 
-                /// 🟠 LEAVE MESSAGE
                 if (isOnLeave)
                   const Padding(
                     padding: EdgeInsets.only(top: 10),
@@ -186,22 +205,96 @@ class PunchStatusCard extends StatelessWidget {
                     ),
                   ),
 
-                /// 🔵 HOLIDAY MESSAGE
-                if (!isOnLeave && isHoliday)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 10),
-                    child: Text(
-                      "Enjoy your holiday 🎉",
+               if (!isOnLeave && isHoliday)
+                Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+        /// TIMELINE DOT + LINE
+                Column(
+                children: [
+                Container(
+                 width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                  color: Colors.blue,
+                  shape: BoxShape.circle,
+                  ),
+                ),
+                Container(
+                 width: 2,
+                  height: 40,
+                  color: Colors.blue.shade100,
+                ),
+              ],
+            ),
+
+          const SizedBox(width: 12),
+
+        /// CONTENT
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// TITLE ROW
+                Row(
+                  children: const [
+                    Text(
+                      "🎉 Holiday",
                       style: TextStyle(
-                        color: Colors.blue,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
+                        color: Colors.blue,
                       ),
                     ),
+                    SizedBox(width: 8),
+                    Text(
+                      "EVENT",
+                      style: TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 6),
+
+                /// REASON (IMPORTANT PART)
+                Text(
+                  holidayName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
                   ),
+                ),
 
-                SizedBox(height: size.height * 0.018),
+                const SizedBox(height: 4),
 
-                /// ⏳ TIMER (BLOCKED ON LEAVE + HOLIDAY)
+                /// SMALL TAG
+                Text(
+                  "Office Closed • No Attendance Required",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
                 if (!isOnLeave &&
                     !isHoliday &&
                     punch.punchStatus == "done")
@@ -211,11 +304,11 @@ class PunchStatusCard extends StatelessWidget {
                       color: AppColors.shadowgrey,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
+                    child: const Row(
                       children: [
                         LiveWorkTimer(),
-                        SizedBox(width: size.width * 0.0),
-                        const Text("Worked Today"),
+                        SizedBox(width: 10),
+                        Text("Worked Today"),
                       ],
                     ),
                   ),

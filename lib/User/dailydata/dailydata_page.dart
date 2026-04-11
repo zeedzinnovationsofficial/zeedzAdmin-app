@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
-
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:zeedz_attendance/User/attendance/widget/leave_history.dart';
 import 'package:zeedz_attendance/User/dailydata/widget/punch_detailcard_widget.dart';
 import 'package:zeedz_attendance/User/dailydata/widget/punch_detailrow_widget.dart';
-
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
+import 'package:zeedz_attendance/widget/dailydataskeleton.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
+import 'package:zeedz_attendance/widget/leavehistoryskeleton.dart';
 
 class DailydataPage extends StatefulWidget {
   const DailydataPage({super.key});
@@ -23,11 +26,26 @@ class _DailydataPageState extends State<DailydataPage> {
   @override
   void initState() {
     super.initState();
-
     final provider = context.read<PunchProvider>();
-
     leavesFuture = provider.fetchMyLeaves();
+    holidayFuture = checkIsHoliday();
   }
+
+  /// 🔥 CHECK HOLIDAY FROM DB
+  Future<bool> checkIsHoliday() async {
+    final today = DateTime.now();
+
+    final dateStr =
+        "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+
+    final response = await Supabase.instance.client
+        .from('holidays')
+        .select()
+        .eq('holiday_date', dateStr);
+
+    return response.isNotEmpty;
+  }
+  late Future<bool> holidayFuture;
 
   @override
   Widget build(BuildContext context) {
@@ -35,18 +53,19 @@ class _DailydataPageState extends State<DailydataPage> {
     final punch = context.watch<PunchProvider>();
 
     if (!punch.isLoaded) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body:DailyDataSkeleton(),
+      );
     }
 
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
           final provider = context.read<PunchProvider>();
-
           await provider.loadTodayPunch();
 
           setState(() {
-            leavesFuture = provider.fetchMyLeaves(); // ✅ refresh manually
+            leavesFuture = provider.fetchMyLeaves();
           });
         },
         child: SingleChildScrollView(
@@ -65,15 +84,25 @@ class _DailydataPageState extends State<DailydataPage> {
 
               SizedBox(height: size.height * 0.018),
 
-              /// Present / Absent Card
-              Builder(
-                builder: (context) {
+              /// 🔥 STATUS CARD (FIXED LOGIC)
+              FutureBuilder<bool>(
+                future: checkIsHoliday(),
+                builder: (context, snapshot) {
+                  final isDbHoliday = snapshot.data ?? false;
+
                   String status = punch.todayStatus ?? 'pending';
 
-                  Color bgColor;
-                  Color textColor;
-                  IconData icon;
-                  String statusText;
+                  /// ✅ CORRECT PRIORITY
+                  if (status == "leave") {
+                    status = "leave";
+                  } else if (isDbHoliday) {
+                    status = "holiday";
+                  }
+
+                  Color bgColor = Colors.grey.shade200;
+                  Color textColor = Colors.grey;
+                  IconData icon = Icons.info_outline;
+                  String statusText = "Not Punched In";
 
                   switch (status) {
                     case 'approved':
@@ -89,6 +118,7 @@ class _DailydataPageState extends State<DailydataPage> {
                       icon = Icons.cancel_rounded;
                       statusText = "Absent";
                       break;
+
                     case 'leave':
                       bgColor = AppColors.shadowroyalblue;
                       textColor = AppColors.royalblue;
@@ -96,17 +126,21 @@ class _DailydataPageState extends State<DailydataPage> {
                       statusText = "On Leave";
                       break;
 
+                    case 'holiday':
+                      bgColor = Colors.blue.shade100;
+                      textColor = Colors.blue;
+                      icon = Icons.celebration;
+                      statusText = "Holiday";
+                      break;
+
                     default:
-                      if (punch.punchInTime == null) {
-                        bgColor = Colors.grey.shade200;
-                        textColor = Colors.grey;
-                        icon = Icons.info_outline;
-                        statusText = "Not Punched In";
-                      } else {
+                      if (punch.punchInTime != null) {
                         bgColor = Colors.orange.shade100;
                         textColor = Colors.orange;
                         icon = Icons.hourglass_empty;
                         statusText = "Pending";
+                      } else {
+                        statusText = "Not Punched In";
                       }
                   }
 
@@ -176,7 +210,7 @@ class _DailydataPageState extends State<DailydataPage> {
 
               SizedBox(height: size.height * 0.02),
 
-              /// Leave History Title + Calendar
+              /// Leave History Title
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -184,10 +218,8 @@ class _DailydataPageState extends State<DailydataPage> {
                   children: [
                     const Text(
                       "Leave History",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                     ),
                     IconButton(
                       icon: const Icon(Icons.calendar_month),
@@ -199,37 +231,17 @@ class _DailydataPageState extends State<DailydataPage> {
 
               SizedBox(height: size.height * 0.02),
 
+              /// Leave History
               FutureBuilder<List<Map<String, dynamic>>>(
                 future: leavesFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(child: Text(snapshot.error.toString()));
+                     return  LeaveHistorySkeleton();
                   }
 
                   final leaves = snapshot.data ?? [];
 
-                  /// DATE FILTER
-                  List<Map<String, dynamic>> filteredLeaves = leaves;
-
-                  if (startDate != null && endDate != null) {
-                    filteredLeaves = leaves.where((leave) {
-                      final start = DateTime.parse(leave['start_date']);
-                      final end = DateTime.parse(leave['end_date']);
-
-                      return start.isBefore(
-                            endDate!.add(const Duration(days: 1)),
-                          ) &&
-                          end.isAfter(
-                            startDate!.subtract(const Duration(days: 1)),
-                          );
-                    }).toList();
-                  }
-
-                  if (filteredLeaves.isEmpty) {
+                  if (leaves.isEmpty) {
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 20),
                       padding: const EdgeInsets.all(12),
@@ -237,7 +249,8 @@ class _DailydataPageState extends State<DailydataPage> {
                         color: AppColors.white,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [
-                          BoxShadow(color: AppColors.lightgrey, blurRadius: 2),
+                          BoxShadow(
+                              color: AppColors.lightgrey, blurRadius: 2),
                         ],
                       ),
                       child: const Center(child: Text("No Leave Applied")),
@@ -245,34 +258,27 @@ class _DailydataPageState extends State<DailydataPage> {
                   }
 
                   return Column(
-                    children: filteredLeaves.map((leave) {
-                      Color statusColor;
-
-                      if (leave['status'] == 'approved') {
-                        statusColor = Colors.green;
-                      } else if (leave['status'] == 'rejected') {
-                        statusColor = Colors.red;
-                      } else {
-                        statusColor = Colors.orange;
-                      }
+                    children: leaves.map((leave) {
+                      Color statusColor =
+                          leave['status'] == 'approved'
+                              ? Colors.green
+                              : leave['status'] == 'rejected'
+                                  ? Colors.red
+                                  : Colors.orange;
 
                       return Center(
                         child: Container(
-                          height: size.height * 0.19,
+                          height: size.height * 0.15,
                           width: size.width * 0.9,
                           margin: const EdgeInsets.symmetric(
-                            horizontal: 15,
-                            vertical: 6,
-                          ),
+                              horizontal: 15, vertical: 6),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: AppColors.white,
                             borderRadius: BorderRadius.circular(10),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.lightgrey,
-                                blurRadius: 2,
-                              ),
+                                  color: AppColors.lightgrey, blurRadius: 2),
                             ],
                           ),
                           child: Column(
@@ -281,72 +287,19 @@ class _DailydataPageState extends State<DailydataPage> {
                               Text(
                                 "Reason: ${leave['reason'] ?? '--'}",
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
+                                    fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 5),
-
                               Text(
-                                "From: ${leave['start_date']}  To: ${leave['end_date']}",
-                              ),
+                                  "From: ${leave['start_date']}  To: ${leave['end_date']}"),
                               const SizedBox(height: 8),
-
                               Text(
                                 "Status: ${leave['status']}",
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: statusColor,
-                                  fontSize: 14,
                                 ),
                               ),
-                              if (leave['status'] == 'approved')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: leave['leave_type'] == 'paid'
-                                          ? Colors.green.withOpacity(0.1)
-                                          : Colors.red.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      leave['leave_type'] == 'paid'
-                                          ? "Paid Leave"
-                                          : "Unpaid Leave",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: leave['leave_type'] == 'paid'
-                                            ? Colors.green
-                                            : Colors.red,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              if (leave['status'] == 'rejected' &&
-                                  leave['reject_reason'] != null &&
-                                  leave['reject_reason'].toString().isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.08),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      "Rejected Reason: ${leave['reject_reason']}",
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ),
                             ],
                           ),
                         ),
