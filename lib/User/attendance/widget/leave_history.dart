@@ -30,13 +30,13 @@ class LeaveHistory extends StatelessWidget {
     if (status == "holiday") {
       statusText = "Holiday";
       statusBg = Colors.grey.shade200;
-      statusColor = Colors.grey;
+      statusColor = Colors.blue;
     } else {
       switch (status) {
         case 'holiday':
           statusText = "Holiday";
           statusBg = Colors.grey.shade200;
-          statusColor = Colors.grey;
+          statusColor = Colors.blue;
           break;
         case 'present':
         case 'approved':

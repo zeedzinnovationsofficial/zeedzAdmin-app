@@ -46,6 +46,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    
 Future.delayed(Duration.zero, () async {
   final response = await Supabase.instance.client
       .from('holidays')
@@ -879,7 +880,8 @@ isSummaryLoading
 
                          
 
- if (!isHoliday && punch.punchStatus != "leave")
+ if (!isHoliday && punch.punchStatus != "leave"&&
+    punch.punchStatus != "absent")
   Padding(
     padding: const EdgeInsets.all(12),
     child: PunchingWidget(

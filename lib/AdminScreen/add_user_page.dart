@@ -72,6 +72,7 @@ class _AddUserPageState extends State<AddUserPage> {
       final response = await supabase.auth.signUp(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
+        
       );
 
       final newUser = response.user;

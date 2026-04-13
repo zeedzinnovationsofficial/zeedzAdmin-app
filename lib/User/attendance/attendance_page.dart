@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -100,8 +99,9 @@ class _AttendancePageState extends State<AttendancePage> {
         .workSchedule; // mon_fri or mon_sat
     print("Schedule => $schedule");
     int present = 0;
-    int pending = 0;
-    int leave = 0;
+int pending = 0;
+int leave = 0;
+int absent = 0;
 
     final now = DateTime.now();
     final year = now.year;
@@ -136,7 +136,7 @@ class _AttendancePageState extends State<AttendancePage> {
     }
 
     /// attendance count
-    int absent = 0;
+   
 
     for (final record in attendanceList) {
       final recordDate = DateTime.parse(record['date']);
@@ -153,7 +153,7 @@ class _AttendancePageState extends State<AttendancePage> {
         present++;
       } else if (status == 'pending') {
         pending++;
-      } else if (status == 'Absent' || status == 'rejected') {
+      } else if (status == 'absent' || status == 'rejected') {
         absent++;
 
         print("absent :$absent");
@@ -460,36 +460,34 @@ class _AttendancePageState extends State<AttendancePage> {
                       }
                       // No DB record
                       else {
-                        final workSchedule = context
-                            .read<PunchProvider>()
-                            .workSchedule;
-
-                        final isHoliday = !isWorkingDay(date);
-
-                        if (isHoliday) {
-                          status = "holiday";
-                        } else {
-                          if (dateKey == todayKey) {
-                            final cutoff = DateTime(
-                              now.year,
-                              now.month,
-                              now.day,
-                              23,
-                              59,
-                            );
-
-                            if (now.isAfter(cutoff)) {
-                              status = "absent";
-                            } else {
-                              status = "not punchin";
-                            }
-                          } else if (date.isBefore(now)) {
-                            status =
-                                "absent"; // ✅ Past day with no punch = absent
-                          }
-                        }
+                      final provider = context.read<PunchProvider>();
+                      if (provider.isHoliday(date)) {
+                      status = "holiday";
+                     }
+                      else if (!isWorkingDay(date)) {
+                      status = "holiday";
                       }
+                      else {
+                      if (dateKey == todayKey) {
+                      final cutoff = DateTime(
+                     now.year,
+                     now.month,
+                     now.day,
+                     10,
+                     30, 
+                      );
 
+                    if (now.isAfter(cutoff)) {
+                     status = "absent"; // 🔥 AFTER 10:30 = ABSENT
+                     } else {
+                    status = "not punchin";
+                    }
+                    }  
+                     else if (date.isBefore(now)) {
+                      status = "absent";
+                    }
+                    }
+                    }     
                       return LeaveHistory(
                         date: date,
                         punchIn: punchIn,

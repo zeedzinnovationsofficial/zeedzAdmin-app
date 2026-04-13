@@ -424,13 +424,30 @@ if (isHoliday(now)) {
     }
 
   } else {
+  final cutoff = DateTime(now.year, now.month, now.day, 10, 30);
+
+  if (now.isAfter(cutoff)) {
+    /// 🔴 MARK ABSENT
+    todayStatus = "absent";
+    punchStatus = "absent";
+    statusText = "Absent";
+
+    /// 🔥 OPTIONAL: insert absent record (VERY IMPORTANT for summary)
+    await supabase.from('attendance').upsert({
+      'user_id': user.id,
+      'date': today,
+      'status': 'absent',
+    });
+  } else {
     todayStatus = "";
     punchStatus = "in";
     statusText = "Punch In";
   }
+}
 
   notifyListeners();
-} String get todayFormatted =>
+} 
+String get todayFormatted =>
       DateFormat("EEEE, MMMM d yyyy").format(DateTime.now());
 
   Duration get totalWorkedDuration {
@@ -573,35 +590,59 @@ if (isHoliday(now)) {
     notifyListeners();
   }
 
-  //present date
-  Future<void> loadAttendance([String? userId]) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
+ bool _isLoadingAttendance = false; // 🔥 prevent multiple calls
 
-    final targetUserId = userId ?? user.id;
+Future<void> loadAttendance([String? userId]) async {
+  if (_isLoadingAttendance) return; // 🛑 STOP duplicate calls
+  _isLoadingAttendance = true;
 
-    final now = DateTime.now();
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    _isLoadingAttendance = false;
+    return;
+  }
 
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(now.year, now.month + 1, 0);
+  final targetUserId = userId ?? user.id;
 
+  try {
+    /// 🔥 FETCH ONLY CURRENT USER
     final response = await supabase
         .from('attendance')
         .select('user_id, date, status, punch_in, punch_out')
-        // .gte('date', startOfMonth.toIso8601String().split('T')[0])
-        // .lte('date', endOfMonth.toIso8601String().split('T')[0])
+        .eq('user_id', targetUserId)
         .order('date', ascending: false);
 
-    attendanceList = List<Map<String, dynamic>>.from(response);
+    print("RAW DATA LENGTH: ${response.length}");
 
-    todayAttendance = List<Map<String, dynamic>>.from(response);
+    /// 🔥 FORCE UNIQUE BY DATE
+    final Map<String, Map<String, dynamic>> uniqueMap = {};
+
+    for (var item in response) {
+      final date = item['date'];
+
+      /// 🛑 only keep first occurrence
+      if (!uniqueMap.containsKey(date)) {
+        uniqueMap[date] = item;
+      }
+    }
+
+    final cleanList = uniqueMap.values.toList();
+
+    print("CLEAN DATA LENGTH: ${cleanList.length}");
+
+    attendanceList = List<Map<String, dynamic>>.from(cleanList);
+    todayAttendance = List<Map<String, dynamic>>.from(cleanList);
 
     await loadTodayPunch();
 
     notifyListeners();
+  } catch (e) {
+    print("ERROR: $e");
+  } finally {
+    _isLoadingAttendance = false;
   }
-
-  bool isImageUploading = false;
+}
+bool isImageUploading = false;
 
   Future<void> uploadProfileImage(File imageFile, BuildContext context) async {
     final user = supabase.auth.currentUser;
@@ -676,7 +717,8 @@ Future<void> loadHolidays() async {
   print("HOLIDAYS: $holidayReasons");
 
   notifyListeners();
-}bool isHoliday(DateTime date) {
+}
+bool isHoliday(DateTime date) {
   final key =
       "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
 
@@ -710,133 +752,115 @@ String getHolidayReason(DateTime date) {
   int totalAbsentEmployees = 0;
   int totalPendingEmployees = 0;
   int totalLeaveEmployees = 0;
-  Future<void> loadSuperAdminStats() async {
+ Future<void> loadSuperAdminStats() async {
+  try {
     final now = DateTime.now();
+
     final startOfMonth =
         "${now.year}-${now.month.toString().padLeft(2, '0')}-01";
 
     final today =
         "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
-    try {
-      /// 1️⃣ Get all users (INCLUDING superadmin since total = 4)
-      final users = await supabase
-          .from('users')
-          .select('id')
-          .neq('role', 'superadmin');
+    /// 1️⃣ GET USERS (exclude superadmin)
+    final users = await supabase
+        .from('users')
+        .select('id')
+        .neq('role', 'superadmin');
 
-      totalEmployees = users.length;
+    totalEmployees = users.length;
 
-      /// 2️⃣ Approved today
-      final approvedToday = await supabase
-          .from('attendance')
-          .select('user_id')
-          .eq('date', today)
-          .eq('status', 'approved');
+    final Set<String> allUserIds =
+        users.map((e) => e['id'].toString()).toSet();
 
-      /// 3️⃣ Pending THIS MONTH
-      final pendingMonth = await supabase
-          .from('attendance')
-          .select('user_id')
-          .gte('date', startOfMonth)
-          .lte('date', today)
-          .eq('status', 'pending');
+    /// 2️⃣ TODAY ATTENDANCE
+    final approvedToday = await supabase
+        .from('attendance')
+        .select('user_id')
+        .eq('date', today)
+        .eq('status', 'approved');
 
-      /// 4️⃣ Pending TODAY
-      final pendingToday = await supabase
-          .from('attendance')
-          .select('user_id')
-          .eq('date', today)
-          .eq('status', 'pending');
+    final pendingToday = await supabase
+        .from('attendance')
+        .select('user_id')
+        .eq('date', today)
+        .eq('status', 'pending');
 
-      /// 4️⃣ Leave today
-      final leaveToday = await supabase
-          .from('leave_requests')
-          .select('user_id')
-          .eq('status', 'approved')
-          .lte('start_date', today)
-          .gte('end_date', today);
+    final leaveToday = await supabase
+        .from('leave_requests')
+        .select('user_id')
+        .eq('status', 'approved')
+        .lte('start_date', today)
+        .gte('end_date', today);
 
-      totalPresentEmployees = approvedToday
-          .map((e) => e['user_id'])
-          .toSet()
-          .length;
+    totalPresentEmployees =
+        approvedToday.map((e) => e['user_id']).toSet().length;
 
-      final todayPendingCount = pendingToday
-          .map((e) => e['user_id'])
-          .toSet()
-          .length;
-      totalPendingEmployees = todayPendingCount;
-      totalLeaveEmployees = leaveToday.map((e) => e['user_id']).toSet().length;
+    totalPendingEmployees =
+        pendingToday.map((e) => e['user_id']).toSet().length;
 
-      /// MONTH ATTENDANCE
-      final monthAttendance = await supabase
-          .from('attendance')
-          .select('user_id,status')
-          .gte('date', startOfMonth)
-          .lte('date', today);
-      print("start of month$startOfMonth");
-      print("date$today");
-      print("month respond$monthAttendance");
+    final Set<String> leaveTodayIds =
+        leaveToday.map((e) => e['user_id'].toString()).toSet();
 
-      final Set<String> presentIds = {};
-      final Set<String> pendingIds = {};
-      final Set<String> absentIds = {};
-      int presentCount = 0;
-      int pendingCount = 0;
-      int absentCount = 0;
+    totalLeaveEmployees = leaveTodayIds.length;
 
-      for (var row in monthAttendance) {
-        final status = row['status'];
+    /// 3️⃣ MONTH ATTENDANCE
+    final monthAttendance = await supabase
+        .from('attendance')
+        .select('user_id,status')
+        .gte('date', startOfMonth)
+        .lte('date', today);
 
-        if (status == 'approved') {
-          presentCount++;
-        }
+    final Set<String> presentIds = {};
+    final Set<String> pendingIds = {};
 
-        if (status == 'pending') {
-          pendingCount++;
-        }
-        print("total absent: ${totalAbsentEmployees}");
-        if (status == 'rejected' || status == 'Absent') {
-          absentCount++;
-        }
+    for (var row in monthAttendance) {
+      final status = row['status'];
+      final userId = row['user_id'].toString();
+
+      if (status == 'approved') {
+        presentIds.add(userId);
+      } else if (status == 'pending') {
+        pendingIds.add(userId);
       }
-
-      /// MONTH LEAVE
-      final leaveMonth = await supabase
-          .from('leave_requests')
-          .select('user_id')
-          .eq('status', 'approved')
-          .lte('start_date', today)
-          .gte('end_date', startOfMonth);
-
-      final leaveIds = leaveMonth.map((e) => e['user_id']).toSet();
-      int leaveCount = leaveMonth.length;
-
-      /// SET COUNTS
-      totalPresentEmployees = presentCount;
-      totalPendingEmployees = pendingCount;
-      totalLeaveEmployees = leaveCount;
-      totalAbsentEmployees = absentCount;
-
-      final allAttendance = await supabase.from('attendance').select();
-      print("ALL ATTENDANCE:");
-      print(allAttendance);
-
-      print("TODAY STRING: $today");
-      print("Approved Raw: $approvedToday");
-      print("Total: $totalEmployees");
-      print("Present: $totalPresentEmployees");
-      print("Pending: $totalPendingEmployees");
-      print("Leave: $totalLeaveEmployees");
-      print("Absent: $totalAbsentEmployees");
-
-      notifyListeners();
-    } catch (e) {
-      print("SuperAdmin Stats Error: $e");
     }
-  }
 
+    /// 4️⃣ MONTH LEAVE
+    final leaveMonth = await supabase
+        .from('leave_requests')
+        .select('user_id')
+        .eq('status', 'approved')
+        .lte('start_date', today)
+        .gte('start_date', startOfMonth);
+
+    final Set<String> leaveMonthIds =
+        leaveMonth.map((e) => e['user_id'].toString()).toSet();
+
+    /// 5️⃣ FINAL ABSENT LOGIC (IMPORTANT FIX)
+    final Set<String> activeUsers =
+        presentIds.union(leaveMonthIds);
+
+    final Set<String> absentIds =
+        allUserIds.difference(activeUsers);
+
+    /// 6️⃣ FINAL ASSIGNMENTS
+    totalPresentEmployees = presentIds.length;
+    totalPendingEmployees = pendingIds.length;
+    totalLeaveEmployees = leaveMonthIds.length;
+    totalAbsentEmployees = absentIds.length;
+
+    /// DEBUG LOGS
+    print("Total Employees: $totalEmployees");
+    print("Present: $totalPresentEmployees");
+    print("Pending: $totalPendingEmployees");
+    print("Leave: $totalLeaveEmployees");
+    print("Absent: $totalAbsentEmployees");
+
+    notifyListeners();
+  } catch (e) {
+    print("SuperAdmin Stats Error: $e");
+  }
+}
   //total employees list
   Future<void> loadEmployees() async {
     try {
@@ -1141,84 +1165,107 @@ String getHolidayReason(DateTime date) {
     };
   }
 
-  List<Map<String, dynamic>> getMonthAbsentEmployees(DateTime selectedMonth) {
-    List<Map<String, dynamic>> result = [];
+ List<Map<String, dynamic>> getMonthAbsentEmployees(DateTime selectedMonth) {
+  List<Map<String, dynamic>> result = [];
 
-    final now = DateTime.now();
+  final now = DateTime.now();
 
-    /// 📅 Month range based on selected month
-    final monthStart = DateTime(selectedMonth.year, selectedMonth.month, 1);
-    final monthEnd = DateTime(selectedMonth.year, selectedMonth.month + 1, 0);
+  final monthStart = DateTime(selectedMonth.year, selectedMonth.month, 1);
+  final monthEnd = DateTime(selectedMonth.year, selectedMonth.month + 1, 0);
 
-    for (final user in employeeList) {
-      /// 🚫 skip admin
-      if (user['role'] == 'superadmin') continue;
+  for (final user in employeeList) {
+    if (user['role'] == 'superadmin') continue;
 
-      final schedule = user['work_schedule'] ?? "mon_sat";
+    final schedule = user['work_schedule'] ?? "mon_sat";
 
-      /// 📅 Joining date
-      final joiningDate = DateTime.parse(user['joining_date']);
+    final joiningDate = DateTime.parse(user['joining_date']);
 
-      /// ✅ Start from joining date OR month start
-      final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
+    final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
 
-      for (
-        DateTime d = start;
-        !d.isAfter(monthEnd);
-        d = d.add(const Duration(days: 1))
-      ) {
-        /// 🚫 Skip future dates ONLY if current month
-        if (selectedMonth.year == now.year &&
-            selectedMonth.month == now.month &&
-            d.isAfter(now))
-          continue;
+    for (
+      DateTime d = start;
+      !d.isAfter(monthEnd);
+      d = d.add(const Duration(days: 1))
+    ) {
+      /// 🚫 Skip future dates (only current month)
+      if (selectedMonth.year == now.year &&
+          selectedMonth.month == now.month &&
+          d.isAfter(now)) continue;
 
-        /// 🚫 Skip holidays
-        if (schedule == "mon_fri") {
-          if (d.weekday == DateTime.saturday || d.weekday == DateTime.sunday)
-            continue;
-        } else {
-          if (d.weekday == DateTime.sunday) continue;
+      /// 🚫 Skip weekly off
+      if (schedule == "mon_fri") {
+        if (d.weekday == DateTime.saturday ||
+            d.weekday == DateTime.sunday) continue;
+      } else {
+        if (d.weekday == DateTime.sunday) continue;
+      }
+
+      /// 🚫 Skip HOLIDAY (🔥 IMPORTANT FIX)
+      if (isHoliday(d)) continue;
+
+      final dateKey =
+          "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+
+      /// ✅ Check attendance
+      final record = attendanceList.where((a) =>
+          a['user_id'] == user['id'] &&
+          a['date'] == dateKey);
+
+      DateTime cutoffTime = DateTime(d.year, d.month, d.day, 10, 30);
+
+      bool hasValidPunch = false;
+
+      if (record.isNotEmpty) {
+        final r = record.first;
+
+        if (r['punch_in'] != null) {
+          DateTime punchIn = DateTime.parse(r['punch_in']);
+
+          /// ✅ BEFORE 10:30 → Present
+          if (punchIn.isBefore(cutoffTime)) {
+            hasValidPunch = true;
+          }
         }
 
-        final dateKey =
-            "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
-
-        /// ✅ Check attendance
-        final hasAttendance = attendanceList.any(
-          (record) =>
-              record['user_id'] == user['id'] &&
-              record['date'] == dateKey &&
-              (record['status'] == 'approved' || record['status'] == 'pending'),
-        );
-
-        /// ✅ Check leave
-        final isOnLeave = leaveList.any((leave) {
-          final startLeave = DateTime.parse(leave['start_date']);
-          final endLeave = DateTime.parse(leave['end_date']);
-
-          return leave['user_id'] == user['id'] &&
-              !d.isBefore(startLeave) &&
-              !d.isAfter(endLeave);
-        });
-
-        /// ❌ ABSENT CONDITION
-        if (!hasAttendance && !isOnLeave) {
-          result.add({
-            "name": user['name'],
-            "department": user['department'],
-            "profile_image_url": user['profile_image_url'],
-            "date": dateKey,
-            "status": "absent",
-          });
+        /// Approved also counts
+        if (r['status'] == 'approved') {
+          hasValidPunch = true;
         }
       }
-    }
 
-    print("FINAL ABSENT LIST => ${result.length}");
-    return result;
+      /// ✅ Check leave
+      final isOnLeave = leaveList.any((leave) {
+        final startLeave = DateTime.parse(leave['start_date']);
+        final endLeave = DateTime.parse(leave['end_date']);
+
+        return leave['user_id'] == user['id'] &&
+            !d.isBefore(startLeave) &&
+            !d.isAfter(endLeave);
+      });
+
+      /// ❌ FINAL ABSENT RULE
+      if (!hasValidPunch && !isOnLeave) {
+        /// 🕒 Only after 10:30 for today
+        if (d.year == now.year &&
+            d.month == now.month &&
+            d.day == now.day) {
+          if (now.isBefore(cutoffTime)) continue;
+        }
+
+        result.add({
+          "name": user['name'],
+          "department": user['department'],
+          "profile_image_url": user['profile_image_url'],
+          "date": dateKey,
+          "status": "absent",
+        });
+      }
+    }
   }
 
+  print("FINAL ABSENT LIST => ${result.length}");
+  return result;
+}
   Future<void> fetchLeaveList() async {
     final data = await supabase
         .from('leave_requests')
@@ -1272,7 +1319,7 @@ String getHolidayReason(DateTime date) {
 
     final response = await supabase
         .from('attendance')
-        .select('user_id, date, status');
+         .select('user_id, date, status, punch_in');
     // .gte('date', startOfMonth)
     // .lte('date', today);
 
@@ -1287,6 +1334,7 @@ String getHolidayReason(DateTime date) {
     selectedMonth = month;
     notifyListeners();
   }
+  
 
  
 

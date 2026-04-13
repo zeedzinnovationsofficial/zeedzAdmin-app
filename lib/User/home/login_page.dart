@@ -17,8 +17,9 @@ class _LoginPageState extends State<LoginPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+
   bool isPasswordVisible = false;
-  bool isConfirmPasswordVisible = false;
+
   String? emailError;
   String? passwordError;
 
@@ -40,7 +41,7 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (response.user == null) {
-        throw Exception("Invalid login");
+        throw Exception("User not found");
       }
 
       await context.read<PunchProvider>().loadProfile();
@@ -49,31 +50,23 @@ class _LoginPageState extends State<LoginPage> {
         context,
         MaterialPageRoute(builder: (_) => Dashboard(currentindex: 0)),
       );
-    } catch (e) {
+    } on AuthException catch (e) {
+      print("LOGIN ERROR: ${e.message}");
+
       setState(() {
-        emailError = "Invalid email ";
-        passwordError = "Invalid password";
+        emailError = e.message;
+        passwordError = "";
+      });
+    } catch (e) {
+      print("LOGIN ERROR: $e");
+
+      setState(() {
+        emailError = "Login failed";
+        passwordError = "Check credentials";
       });
     }
 
     setState(() => isLoading = false);
-  }
-
-  Future<void> resetPassword() async {
-    if (emailController.text.isEmpty) {
-      setState(() {
-        emailError = "Enter your email first";
-      });
-      return;
-    }
-
-    await supabase.auth.resetPasswordForEmail(
-      emailController.text.trim(),
-      redirectTo: 'zeedzattendance://reset-password',
-    );
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Password reset email sent")));
   }
 
   @override
@@ -107,22 +100,13 @@ class _LoginPageState extends State<LoginPage> {
 
                 SizedBox(height: size.height * 0.04),
 
-                // ✅ Email Field
+                /// ✅ EMAIL
                 TextFormField(
                   controller: emailController,
                   decoration: InputDecoration(
                     labelText: "Email",
                     border: const OutlineInputBorder(),
                     errorText: emailError,
-                    enabledBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.grey),
-                    ),
-                    errorBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.red, width: 2),
-                    ),
-                    focusedErrorBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.red, width: 2),
-                    ),
                   ),
                   onChanged: (_) {
                     setState(() {
@@ -134,11 +118,9 @@ class _LoginPageState extends State<LoginPage> {
                       return "Email is required";
                     }
 
-                    String pattern = r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$';
-                    RegExp regex = RegExp(pattern);
-
-                    if (!regex.hasMatch(value)) {
-                      return "Check the mail id";
+                    // ✅ SIMPLE VALIDATION (FIXED)
+                    if (!value.contains('@') || !value.contains('.')) {
+                      return "Enter valid email";
                     }
 
                     return null;
@@ -147,7 +129,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 20),
 
-                // ✅ Password Field
+                /// ✅ PASSWORD
                 TextFormField(
                   controller: passwordController,
                   obscureText: !isPasswordVisible,
@@ -155,15 +137,6 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: "Password",
                     border: const OutlineInputBorder(),
                     errorText: passwordError,
-                    enabledBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.grey),
-                    ),
-                    errorBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.red, width: 2),
-                    ),
-                    focusedErrorBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.red, width: 2),
-                    ),
                     suffixIcon: IconButton(
                       icon: Icon(
                         isPasswordVisible
@@ -197,6 +170,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 30),
 
+                /// ✅ LOGIN BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -222,13 +196,6 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                   ),
                 ),
-
-                const SizedBox(height: 15),
-
-                // TextButton(
-                //   onPressed: resetPassword,
-                //   child: const Text("Forgot Password?"),
-                // ),
               ],
             ),
           ),
