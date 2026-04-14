@@ -4,6 +4,7 @@ import 'package:zeedz_attendance/AdminScreen/approval.dart';
 
 import 'package:zeedz_attendance/AdminScreen/Leaveapproval/leave_approval_page.dart';
 import 'package:zeedz_attendance/AdminScreen/employee_list_page.dart';
+import 'package:zeedz_attendance/AdminScreen/salary.dart';
 import 'package:zeedz_attendance/User/attendance/attendance_page.dart';
 import 'package:zeedz_attendance/User/Leave/leave_page.dart';
 import 'package:zeedz_attendance/User/dailydata/dailydata_page.dart';
@@ -43,7 +44,7 @@ class _DashboardState extends State<Dashboard> {
       screens = [
         HomePage(),
         DailydataPage(),
-        LeavePage(),
+        SalaryDashboardPage(),
         AttendancePage(),
         ProfilePage(),
       ];
@@ -51,7 +52,7 @@ class _DashboardState extends State<Dashboard> {
       navItems = [
         {"icon": Icons.home, "label": "Home"},
         {"icon": Icons.co_present_rounded, "label": "Dailydata"},
-        {"icon": Icons.post_add, "label": "Leave"},
+        {"icon": Icons.account_balance_wallet, "label": "Salary"},
         {"icon": Icons.fact_check, "label": "Attendance"},
         {"icon": Icons.person, "label": "Profile"},
       ];
@@ -68,7 +69,7 @@ class _DashboardState extends State<Dashboard> {
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.co_present_rounded, "label": "Dailydata"},
+        {"icon": Icons.account_balance_wallet, "label": "Dailydata"},
         {"icon": Icons.post_add, "label": "Leave"},
         {"icon": Icons.fact_check, "label": "Attendance"},
         {"icon": Icons.person, "label": "Profile"},
@@ -78,7 +79,7 @@ class _DashboardState extends State<Dashboard> {
     else if (role == 'hr') {
       screens = [
         HomePage(),
-        DailydataPage(),
+         SalaryDashboardPage(),
         AttendanceApproval(hasBottomNav: true),
         LeaveApprovalPage(),
 
@@ -87,7 +88,7 @@ class _DashboardState extends State<Dashboard> {
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.co_present_rounded, "label": "Dailydata"},
+        {"icon": Icons.account_balance_wallet, "label": "Salary"},
         {"icon": Icons.approval_outlined, "label": "Approval"},
         {"icon": Icons.verified_outlined, "label": "Leaves"},
 
@@ -98,7 +99,7 @@ class _DashboardState extends State<Dashboard> {
     else if (role == 'admin') {
       screens = [
         HomePage(),
-        DailydataPage(),
+        SalaryDashboardPage(),
         AttendanceApproval(hasBottomNav: true),
         LeaveApprovalPage(),
 
@@ -107,7 +108,7 @@ class _DashboardState extends State<Dashboard> {
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.co_present_rounded, "label": "Dailydata"},
+        {"icon": Icons.co_present_rounded, "label": "Salary"},
         {"icon": Icons.approval_outlined, "label": "Approval"},
         {"icon": Icons.verified_outlined, "label": "Leaves"},
 

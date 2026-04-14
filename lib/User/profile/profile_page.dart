@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/AdminScreen/employee_list_page.dart';
 import 'package:zeedz_attendance/AdminScreen/organization%20overview/employees_details_page.dart';
 import 'package:zeedz_attendance/User/Leave/leave_page.dart';
+import 'package:zeedz_attendance/User/dailydata/dailydata_page.dart';
 import 'package:zeedz_attendance/User/home/login_page.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/User/profile/setting_page.dart';
@@ -135,22 +136,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
               SizedBox(height: size.height * 0.0),
 
-              /// Leave Applying
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => LeavePage()),
-                  );
-                },
-                child: buildTile(
-                  icon: Icons.post_add,
-                  title: "Leave Applying",
-                  value: "",
-                  isClickable: true,
-                  context: context,
-                ),
-              ),
 
               SizedBox(height: size.height * 0.0),
               InkWell(
@@ -184,10 +169,41 @@ class _ProfilePageState extends State<ProfilePage> {
                   context: context,
                 ),
               ),
+               InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => DailydataPage()),
+                  );
+                },
+                child: buildTile(
+                  icon: Icons.co_present_rounded,
+                  title: "Dailydata",
+                  value: "",
+                  isClickable: true,
+                  context: context,
+                ),
+              ),
             ],
 
             SizedBox(height: size.height * 0.0),
 
+              /// Leave Applying
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => LeavePage()),
+                  );
+                },
+                child: buildTile(
+                  icon: Icons.post_add,
+                  title: "Leave Applying",
+                  value: "",
+                  isClickable: true,
+                  context: context,
+                ),
+              ),
             /// SETTINGS
             InkWell(
               onTap: () {

@@ -109,6 +109,7 @@ class _AttendancePageState extends State<AttendancePage> {
       if (recordDate.month != selectedMonth) continue;
       if (recordDate.isBefore(start)) continue;
       if (selectedMonth == now.month && recordDate.isAfter(now)) continue;
+      
       if (!isWorkingDay(recordDate, schedule)) continue;
 
       final status = record['status'];
