@@ -16,6 +16,17 @@ class SmallCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    IconData? icon;
+    Color valueColor = Colors.black;
+
+    if (isGreen) {
+      icon = Icons.trending_up;
+      valueColor = Colors.green;
+    } else if (isRed) {
+      icon = Icons.trending_down;
+      valueColor = Colors.red;
+    }
+
     return Expanded(
       child: Container(
         margin: const EdgeInsets.all(6),
@@ -23,14 +34,10 @@ class SmallCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-
-          /// ✅ Better visible border
           border: Border.all(
             color: const Color.fromARGB(255, 228, 228, 228),
             width: 1,
           ),
-
-          /// ✨ optional shadow (premium look)
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
@@ -46,16 +53,23 @@ class SmallCard extends StatelessWidget {
               style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isGreen
-                    ? Colors.green
-                    : isRed
-                        ? Colors.red
-                        : Colors.black,
-              ),
+
+            /// 🔥 VALUE + ICON ROW
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: valueColor, size: 18),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: valueColor,
+                  ),
+                ),
+              ],
             ),
           ],
         ),

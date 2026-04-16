@@ -59,6 +59,18 @@ class _DailydataPageState extends State<DailydataPage> {
     }
 
     return Scaffold(
+       appBar: AppBar(
+    leading: IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        Navigator.pop(context);
+      },
+    ),
+    title: Center(child: Text("Day Details",style:TextStyle(fontSize: 18,fontWeight: .bold) ,)),
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    foregroundColor: Colors.black,
+  ),
       body: RefreshIndicator(
         onRefresh: () async {
           final provider = context.read<PunchProvider>();
@@ -73,16 +85,7 @@ class _DailydataPageState extends State<DailydataPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(height: size.height * 0.06),
-
-              const Center(
-                child: Text(
-                  "Day Details",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-
-              SizedBox(height: size.height * 0.018),
+              SizedBox(height: size.height * 0.01),
 
               /// 🔥 STATUS CARD (FIXED LOGIC)
               FutureBuilder<bool>(

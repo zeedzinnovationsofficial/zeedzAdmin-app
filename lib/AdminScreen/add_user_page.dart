@@ -15,20 +15,23 @@ class AddUserPage extends StatefulWidget {
 
 class _AddUserPageState extends State<AddUserPage> {
   final supabase = Supabase.instance.client;
+
   bool isPasswordVisible = false;
+  bool isLoading = false;
+
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final phoneController = TextEditingController();
-  final departmentController = TextEditingController();
   final bloodGroupController = TextEditingController();
   final employeeIdController = TextEditingController();
+  final salaryController = TextEditingController(); // ✅ added
 
   DateTime selectedJoiningDate = DateTime.now();
   String selectedRole = 'employee';
   String selectedDepartment = "Software";
-  bool isLoading = false;
   String workSchedule = "mon_sat";
+
   File? selectedImage;
 
   Future<void> pickImage() async {
@@ -58,7 +61,6 @@ class _AddUserPageState extends State<AddUserPage> {
     setState(() => isLoading = true);
 
     try {
-      /// SAVE CURRENT SESSION (superadmin/admin/hr)
       final currentSession = supabase.auth.currentSession;
 
       final currentUserRole = context.read<PunchProvider>().role;
@@ -68,25 +70,20 @@ class _AddUserPageState extends State<AddUserPage> {
         finalRole = 'employee';
       }
 
-      /// CREATE AUTH USER
       final response = await supabase.auth.signUp(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
-        
       );
 
       final newUser = response.user;
       if (newUser == null) throw Exception("Auth user creation failed");
 
-      /// RESTORE ADMIN SESSION
       if (currentSession != null) {
         await supabase.auth.setSession(currentSession.refreshToken!);
       }
 
-      /// UPLOAD IMAGE
       final imageUrl = await uploadImage(newUser.id);
 
-      /// INSERT USER DATA
       await supabase.from('users').insert({
         'id': newUser.id,
         'employee_id': employeeIdController.text.trim(),
@@ -101,6 +98,11 @@ class _AddUserPageState extends State<AddUserPage> {
         'profile_image_url': imageUrl,
         'role': finalRole,
         'leave_balance': 12,
+
+        /// ✅ salary nullable
+        'salary': salaryController.text.trim().isEmpty
+            ? null
+            : int.tryParse(salaryController.text.trim()),
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,9 +111,9 @@ class _AddUserPageState extends State<AddUserPage> {
 
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
 
     setState(() => isLoading = false);
@@ -132,7 +134,6 @@ class _AddUserPageState extends State<AddUserPage> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              //  Profile Image
               GestureDetector(
                 onTap: pickImage,
                 child: CircleAvatar(
@@ -145,25 +146,30 @@ class _AddUserPageState extends State<AddUserPage> {
                       : null,
                 ),
               ),
+
               SizedBox(height: size.height * 0.018),
 
               TextField(
                 controller: employeeIdController,
                 decoration: const InputDecoration(labelText: "Employee ID"),
               ),
+
               SizedBox(height: size.height * 0.015),
 
               TextField(
                 controller: nameController,
                 decoration: const InputDecoration(labelText: "Full Name"),
               ),
+
               SizedBox(height: size.height * 0.015),
 
               TextField(
                 controller: emailController,
                 decoration: const InputDecoration(labelText: "Email"),
               ),
+
               SizedBox(height: size.height * 0.015),
+
               TextField(
                 controller: passwordController,
                 obscureText: !isPasswordVisible,
@@ -183,12 +189,23 @@ class _AddUserPageState extends State<AddUserPage> {
                   ),
                 ),
               ),
+
               SizedBox(height: size.height * 0.015),
 
               TextField(
                 controller: phoneController,
                 decoration: const InputDecoration(labelText: "Phone"),
               ),
+
+              SizedBox(height: size.height * 0.015),
+
+              /// ✅ Salary
+              TextField(
+                controller: salaryController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: "Salary"),
+              ),
+
               SizedBox(height: size.height * 0.015),
 
               DropdownButtonFormField<String>(
@@ -206,6 +223,7 @@ class _AddUserPageState extends State<AddUserPage> {
                   });
                 },
               ),
+
               SizedBox(height: size.height * 0.015),
 
               DropdownButtonFormField<String>(
@@ -227,12 +245,14 @@ class _AddUserPageState extends State<AddUserPage> {
                   });
                 },
               ),
+
               SizedBox(height: size.height * 0.015),
 
               TextField(
                 controller: bloodGroupController,
                 decoration: const InputDecoration(labelText: "Blood Group"),
               ),
+
               SizedBox(height: size.height * 0.015),
 
               ListTile(
@@ -254,14 +274,14 @@ class _AddUserPageState extends State<AddUserPage> {
                 },
               ),
 
+              SizedBox(height: size.height * 0.015),
+
+              /// ✅ ROLE DROPDOWN (restored)
               if (role == 'superadmin')
                 DropdownButtonFormField<String>(
                   value: selectedRole,
                   items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Text("Employee"),
-                    ),
+                    DropdownMenuItem(value: 'employee', child: Text("Employee")),
                     DropdownMenuItem(value: 'hr', child: Text("HR")),
                     DropdownMenuItem(value: 'admin', child: Text("Admin")),
                     DropdownMenuItem(value: 'intern', child: Text("Intern")),
@@ -271,14 +291,12 @@ class _AddUserPageState extends State<AddUserPage> {
                   },
                   decoration: const InputDecoration(labelText: "Role"),
                 ),
+
               if (role == 'admin')
                 DropdownButtonFormField<String>(
                   value: selectedRole,
                   items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Text("Employee"),
-                    ),
+                    DropdownMenuItem(value: 'employee', child: Text("Employee")),
                     DropdownMenuItem(value: 'hr', child: Text("HR")),
                     DropdownMenuItem(value: 'intern', child: Text("Intern")),
                   ],
@@ -287,15 +305,12 @@ class _AddUserPageState extends State<AddUserPage> {
                   },
                   decoration: const InputDecoration(labelText: "Role"),
                 ),
+
               if (role == 'hr')
                 DropdownButtonFormField<String>(
                   value: selectedRole,
                   items: const [
-                    DropdownMenuItem(
-                      value: 'employee',
-                      child: Text("Employee"),
-                    ),
-
+                    DropdownMenuItem(value: 'employee', child: Text("Employee")),
                     DropdownMenuItem(value: 'intern', child: Text("Intern")),
                   ],
                   onChanged: (value) {
@@ -304,13 +319,12 @@ class _AddUserPageState extends State<AddUserPage> {
                   decoration: const InputDecoration(labelText: "Role"),
                 ),
 
-              SizedBox(height: size.height * 0.015),
+              SizedBox(height: size.height * 0.02),
 
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: isLoading ? null : createUser,
-
                   child: isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text("Create User"),

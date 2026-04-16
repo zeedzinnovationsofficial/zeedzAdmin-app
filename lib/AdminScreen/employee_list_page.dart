@@ -41,52 +41,30 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
     }
   }
 
-  Future<void> deleteUser(String userId) async {
-    final currentUser = supabase.auth.currentUser;
+ Future<void> deleteUser(String userId) async {
+  final currentUser = supabase.auth.currentUser;
 
-    if (currentUser?.id == userId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("You cannot delete yourself")),
-      );
-      return;
-    }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Confirm Delete"),
-        content: const Text("Are you sure you want to delete this user?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+  if (currentUser?.id == userId) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("You cannot delete yourself")),
     );
-
-    if (confirm != true) return;
-
-    try {
-      await supabase.from('users').delete().eq('id', userId);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("User Deleted Successfully")),
-      );
-
-      setState(() {});
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
-    }
+    return;
   }
 
-  @override
+  try {
+    await supabase.from('users').delete().eq('id', userId);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("User Deleted Successfully")),
+    );
+
+    setState(() {}); // refresh UI
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Delete failed: $e")),
+    );
+  }
+} @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final currentRole = context.watch<PunchProvider>().role;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:zeedz_attendance/AdminScreen/organization%20overview/employees_attendance.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:zeedz_attendance/AdminScreen/organization overview/employees_attendance.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 
 class EmployeeProfilePage extends StatefulWidget {
@@ -14,14 +14,55 @@ class EmployeeProfilePage extends StatefulWidget {
 
 class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
   bool showPassword = false;
+  bool isEditing = false;
+
+  late TextEditingController nameController;
+  late TextEditingController phoneController;
+  late TextEditingController deptController;
+  late TextEditingController roleController;
+  late TextEditingController salaryController;
+  late TextEditingController emailController;
+  late TextEditingController bloodController;
+
+  @override
+  void initState() {
+    super.initState();
+
+    nameController = TextEditingController(text: widget.user['name']);
+    phoneController = TextEditingController(text: widget.user['phone']);
+    deptController = TextEditingController(text: widget.user['department']);
+    roleController = TextEditingController(text: widget.user['role']);
+    salaryController =
+        TextEditingController(text: widget.user['salary'].toString());
+    emailController = TextEditingController(text: widget.user['email']);
+    bloodController =
+        TextEditingController(text: widget.user['blood_group']);
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.user['name'] ?? "Employee"),
         backgroundColor: AppColors.white,
+        actions: [
+          /// ✏️ EDIT / 💾 SAVE
+          IconButton(
+            icon: Icon(isEditing ? Icons.save : Icons.edit),
+            onPressed: () async {
+              if (isEditing) {
+                await saveData();
+              }
+              setState(() {
+                isEditing = !isEditing;
+              });
+            },
+          ),
+        ],
       ),
+
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -32,25 +73,31 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
                 backgroundColor: Colors.blue.shade50,
                 backgroundImage:
                     widget.user['profile_image_url'] != null &&
-                        widget.user['profile_image_url'].toString().isNotEmpty
-                    ? NetworkImage(widget.user['profile_image_url'])
-                    : null,
+                            widget.user['profile_image_url']
+                                .toString()
+                                .isNotEmpty
+                        ? NetworkImage(widget.user['profile_image_url'])
+                        : null,
                 child:
                     widget.user['profile_image_url'] == null ||
-                        widget.user['profile_image_url'].toString().isEmpty
-                    ? const Icon(Icons.person, size: 50, color: Colors.blue)
-                    : null,
+                            widget.user['profile_image_url']
+                                .toString()
+                                .isEmpty
+                        ? const Icon(Icons.person,
+                            size: 50, color: Colors.blue)
+                        : null,
               ),
 
               SizedBox(height: size.height * 0.02),
 
-              Text(
-                widget.user['name'] ?? '',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              /// NAME
+              isEditing
+                  ? TextField(controller: nameController)
+                  : Text(
+                      widget.user['name'] ?? '',
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
 
               SizedBox(height: size.height * 0.02),
 
@@ -63,30 +110,47 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
               ListTile(
                 leading: const Icon(Icons.business),
                 title: const Text("Department"),
-                subtitle: Text(widget.user['department'] ?? ""),
+                subtitle: isEditing
+                    ? TextField(controller: deptController)
+                    : Text(widget.user['department'] ?? ""),
               ),
 
               ListTile(
                 leading: const Icon(Icons.work),
                 title: const Text("Role"),
-                subtitle: Text((widget.user['role'] ?? "").toUpperCase()),
+                subtitle: isEditing
+                    ? TextField(controller: roleController)
+                    : Text((widget.user['role'] ?? "").toUpperCase()),
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.wallet_outlined),
+                title: const Text("Salary"),
+                subtitle: isEditing
+                    ? TextField(controller: salaryController)
+                    : Text(widget.user['salary'].toString()),
               ),
 
               ListTile(
                 leading: const Icon(Icons.email),
                 title: const Text("Email"),
-                subtitle: Text(widget.user['email'] ?? "No Email"),
+                subtitle: isEditing
+                    ? TextField(controller: emailController)
+                    : Text(widget.user['email'] ?? "No Email"),
               ),
+
               ListTile(
                 leading: const Icon(Icons.lock),
                 title: const Text("Password"),
                 subtitle: Text(
-                  showPassword ? widget.user['password'] ?? "" : "••••••••",
+                  showPassword
+                      ? widget.user['password'] ?? ""
+                      : "••••••••",
                 ),
                 trailing: IconButton(
-                  icon: Icon(
-                    showPassword ? Icons.visibility : Icons.visibility_off,
-                  ),
+                  icon: Icon(showPassword
+                      ? Icons.visibility
+                      : Icons.visibility_off),
                   onPressed: () {
                     setState(() {
                       showPassword = !showPassword;
@@ -98,7 +162,9 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
               ListTile(
                 leading: const Icon(Icons.phone),
                 title: const Text("Phone Number"),
-                subtitle: Text(widget.user['phone'] ?? ""),
+                subtitle: isEditing
+                    ? TextField(controller: phoneController)
+                    : Text(widget.user['phone'] ?? ""),
               ),
 
               ListTile(
@@ -110,24 +176,26 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
               ListTile(
                 leading: const Icon(Icons.bloodtype),
                 title: const Text("Blood Group"),
-                subtitle: Text(widget.user['blood_group'] ?? ""),
+                subtitle: isEditing
+                    ? TextField(controller: bloodController)
+                    : Text(widget.user['blood_group'] ?? ""),
               ),
+
               Align(
                 alignment: Alignment.bottomRight,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
+                      horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.shadowroyalblue,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: TextButton(
                     style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero, // keeps container size clean
+                      padding: EdgeInsets.zero,
                       minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      tapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
                     ),
                     onPressed: () {
                       Navigator.push(
@@ -165,4 +233,43 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
       ),
     );
   }
+
+  /// SAVE
+ Future<void> saveData() async {
+  try {
+    final response = await Supabase.instance.client
+        .from('users')
+        .update({
+          'name': nameController.text,
+          'phone': phoneController.text,
+          'department': deptController.text,
+          'role': roleController.text,
+          'salary': salaryController.text.trim().isEmpty
+           ? null
+          : int.tryParse(salaryController.text),
+          'email': emailController.text,
+          'blood_group': bloodController.text,
+        })
+        .eq('id', widget.user['id']);
+
+    print("Updated: $response");
+
+    setState(() {
+      widget.user['name'] = nameController.text;
+      widget.user['phone'] = phoneController.text;
+      widget.user['department'] = deptController.text;
+      widget.user['role'] = roleController.text;
+      widget.user['salary'] = salaryController.text;
+      widget.user['email'] = emailController.text;
+      widget.user['blood_group'] = bloodController.text;
+    });
+
+  } catch (e) {
+    print("Error: $e");
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Update failed: $e")),
+    );
+  }
+}
 }

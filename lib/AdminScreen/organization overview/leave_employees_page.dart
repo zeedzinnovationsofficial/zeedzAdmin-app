@@ -69,7 +69,7 @@ class _LeaveEmployeesPageState extends State<LeaveEmployeesPage> {
                     vertical: 8,
                   ),
                   padding: const EdgeInsets.all(12),
-                  height: size.height * 0.14,
+                  height: size.height * 0.15,
                   decoration: BoxDecoration(
                     color: AppColors.white,
                     borderRadius: BorderRadius.circular(10),

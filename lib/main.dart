@@ -5,9 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
-
-import 'package:zeedz_attendance/auth_gate.dart';
-
+import 'package:zeedz_attendance/auth_gate.dart'; 
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/dashboard_page.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
