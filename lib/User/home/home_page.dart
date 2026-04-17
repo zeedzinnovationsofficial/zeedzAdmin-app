@@ -890,8 +890,10 @@ isSummaryLoading
       onTap: () async {
         if (punch.punchStatus == "in") {
           await _handlePunchIn(context);
+          
         } else if (punch.punchStatus == "out") {
           await punch.punchOut(context);
+          await context.read<PunchProvider>().loadTodayPunch();
         }
       },
     ),
@@ -921,8 +923,8 @@ isSummaryLoading
     if (photo == null) return;
 
     // setState(() {
-    //   isLoading = true; // START LOADER
-    // });
+      // isLoading = true; // START LOADER
+     //});
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -1002,6 +1004,7 @@ isSummaryLoading
           "${place.locality}, ${place.administrativeArea}, ${place.country}";
 
       await context.read<PunchProvider>().punchIn(address, context);
+      await context.read<PunchProvider>().loadTodayPunch();
 
       // await context.read<PunchProvider>().loadAttendance();
 

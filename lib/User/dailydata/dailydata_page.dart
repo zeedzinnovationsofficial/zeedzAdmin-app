@@ -149,7 +149,7 @@ class _DailydataPageState extends State<DailydataPage> {
 
                   return Center(
                     child: Container(
-                      padding: const EdgeInsets.all(9),
+                      padding: const EdgeInsets.all(10),
                       height: size.height * 0.06,
                       width: size.width * 0.89,
                       decoration: BoxDecoration(

@@ -26,7 +26,7 @@ class PunchDetailcardWidget extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Container(
         padding: const EdgeInsets.all(12),
-        height: size.height * 0.22,
+        height: size.height * 0.23,
         width: size.width * 0.42,
         decoration: BoxDecoration(
           color: AppColors.white,

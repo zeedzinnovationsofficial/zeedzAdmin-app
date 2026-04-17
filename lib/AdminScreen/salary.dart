@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:zeedz_attendance/widget/recentdetails.dart';
 import 'package:zeedz_attendance/widget/salary_chart.dart';
-import 'package:zeedz_attendance/widget/salarypiechart.dart';
 import 'package:zeedz_attendance/widget/salaryskeleton.dart';
 import 'package:zeedz_attendance/widget/sectioncard.dart';
 import 'package:zeedz_attendance/widget/smallcard.dart';
@@ -25,7 +25,6 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
   int sundays = 0;
   int holidays = 0;
   int unpaidLeaves = 0;
-  double missingHours = 0;
 
   double net = 0;
   double grossSalary = 0;
@@ -38,6 +37,8 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
 
   bool animateSalary = false;
   bool isLoading = true;
+
+  Timer? timer;
 
   int getSundaysInMonth(int year, int month) {
     int count = 0;
@@ -104,11 +105,42 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
     double perDay = monthlySalary / workingDays;
     double perHour = perDay / 8;
 
-    double leaveDeduction = unpaidLeaves * perDay;
-    double hourDeduction = missingHours * perHour;
+    /// 🔥 FETCH TODAY ATTENDANCE
+    final todayDate = now.toIso8601String().split('T')[0];
 
-    totalDeduction = leaveDeduction + hourDeduction;
-    net = monthlySalary - totalDeduction;
+    final attendance = await supabase
+        .from('attendance')
+        .select()
+        .eq('user_id', supabase.auth.currentUser!.id)
+        .eq('date', todayDate)
+        .maybeSingle();
+
+    double workedHours = 0;
+    double lateHours = 0;
+
+    if (attendance != null && attendance['punch_in'] != null) {
+      final punchIn = DateTime.parse(attendance['punch_in']);
+
+      workedHours = now.difference(punchIn).inMinutes / 60;
+
+      double expectedStartHour = 9.0;
+      double punchHour = punchIn.hour + (punchIn.minute / 60);
+
+      if (punchHour > expectedStartHour) {
+        lateHours = punchHour - expectedStartHour;
+      }
+    }
+
+    /// 🔥 CALCULATION
+    double earnedToday = workedHours * perHour;
+    double lateDeduction = lateHours * perHour;
+    double leaveDeduction = unpaidLeaves * perDay;
+
+    totalDeduction = leaveDeduction + lateDeduction;
+    net = earnedToday - lateDeduction;
+
+    if (net < 0) net = 0;
+
     grossSalary = monthlySalary;
 
     setState(() {
@@ -119,25 +151,25 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
         {
           "icon": Icons.account_balance_wallet,
           "iconColor": Colors.green,
-          "title": "Base Salary",
-          "subtitle": "This Month",
-          "amount": "+ ₹${monthlySalary.toStringAsFixed(0)}",
+          "title": "Today Earnings",
+          "subtitle": "${workedHours.toStringAsFixed(1)} hrs worked",
+          "amount": "+ ₹${earnedToday.toStringAsFixed(2)}",
           "amountColor": Colors.green,
         },
         {
-          "icon": Icons.event_busy,
+          "icon": Icons.access_time,
           "iconColor": Colors.orange,
-          "title": "Unpaid Leave",
-          "subtitle": "$unpaidLeaves days",
-          "amount": "- ₹${leaveDeduction.toStringAsFixed(2)}",
+          "title": "Late Punch",
+          "subtitle": "${lateHours.toStringAsFixed(1)} hrs late",
+          "amount": "- ₹${lateDeduction.toStringAsFixed(2)}",
           "amountColor": Colors.red,
         },
         {
-          "icon": Icons.access_time,
+          "icon": Icons.event_busy,
           "iconColor": Colors.red,
-          "title": "Missing Hours",
-          "subtitle": "${missingHours.toStringAsFixed(1)} hrs",
-          "amount": "- ₹${hourDeduction.toStringAsFixed(2)}",
+          "title": "Unpaid Leave",
+          "subtitle": "$unpaidLeaves days",
+          "amount": "- ₹${leaveDeduction.toStringAsFixed(2)}",
           "amountColor": Colors.red,
         },
       ];
@@ -149,10 +181,7 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
     final alreadyAnimated = prefs.getBool("salary_animated") ?? false;
 
     if (!alreadyAnimated) {
-      setState(() {
-        animateSalary = true;
-      });
-
+      setState(() => animateSalary = true);
       await prefs.setBool("salary_animated", true);
     }
   }
@@ -160,8 +189,18 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
   @override
   void initState() {
     super.initState();
-    isLoading = true;
-    Future.microtask(() => calculateSalary());
+    calculateSalary();
+
+    /// 🔥 AUTO REFRESH
+    timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      calculateSalary();
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -198,7 +237,7 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
                           animateSalary
                               ? TweenAnimationBuilder<double>(
                                   tween: Tween(begin: 0, end: net),
-                                  duration: const Duration(seconds: 2),
+                                  duration: const Duration(seconds: 1),
                                   builder: (context, value, child) {
                                     return Text(
                                       "₹ ${value.toStringAsFixed(0)}",
@@ -248,11 +287,6 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
                     SectionCard(
                       title: "6-Month Trend",
                       child: const SalaryBarChart(),
-                    ),
-
-                    SectionCard(
-                      title: "Salary Composition",
-                      child: const SalaryPieChart(),
                     ),
 
                     SizedBox(height: size.height * 0.02),

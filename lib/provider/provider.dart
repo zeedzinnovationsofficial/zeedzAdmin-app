@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PunchProvider extends ChangeNotifier {
+  
   PunchProvider() {}
   List<Map<String, dynamic>> attendanceList = [];
   List<Map<String, dynamic>> employeeList = [];
@@ -182,161 +183,92 @@ await loadTodayLeave();
   }
 
   //  PUNCH IN
-  Future<void> punchIn(String location, BuildContext context) async {
-    final session = supabase.auth.currentSession;
-    final user = session?.user;
+Future<void> punchIn(String location, BuildContext context) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
 
-    if (user == null) {
+  final now = DateTime.now();
+  final dateOnly = DateFormat('yyyy-MM-dd').format(now);
+
+  try {
+    // Holiday check
+    if (isHoliday(now)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Session expired. Please login again.")),
+        SnackBar(content: Text("Today is ${getHolidayReason(now)}")),
       );
       return;
     }
 
-    /// SHOW LOADER FIRST
-    // showDialog(
-    //   context: context,
-    //   barrierDismissible: false,
-    //   builder: (_) => const Center(child: CircularProgressIndicator()),
-    // );
+    // Prevent duplicate punch
+   final existing = await supabase
+    .from('attendance')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('date', dateOnly)
+    .maybeSingle();
 
-    try {
-      final now = DateTime.now();
-      final dateOnly = DateFormat('yyyy-MM-dd').format(now);
-
-
-if (isHoliday(now)) {
-  punchInTime = null;
-  punchOutTime = null;
-  isRunning = false;
-  punchStatus = "holiday";
-  statusText = "🎉 Holiday";
-
-  todayStatus = "holiday";
-
-  notifyListeners();
+   if (existing != null) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text("Already punched today")),
+  );
   return;
 }
-      /// CHECK EXISTING PUNCH
-      final existing = await supabase
-          .from('attendance')
-          .select()
-          .eq('user_id', user.id)
-          .eq('date', dateOnly)
-          .maybeSingle();
 
-      if (existing != null) {
-        if (context.mounted) Navigator.pop(context); // stop loader
+    // Insert punch
+   await supabase.from('attendance').upsert({
+  'user_id': user.id,
+  'date': dateOnly,
+  'punch_in': now.toIso8601String(),
+  'location': location,
+  'status': 'present',
+}, onConflict: 'user_id,date');
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Already punched today")));
-        return;
-      }
+    // Update UI
+    punchInTime = now;
+    punchStatus = "out";
+    statusText = "Punched In";
+    locationAddress = location;
 
-      /// INSERT DATA
-      await supabase.from('attendance').insert({
-        'user_id': user.id,
-        'date': dateOnly,
-        'punch_in': now.toIso8601String(),
-        'location': location,
-      });
+    await loadTodayPunch();
+    await loadAttendance();
 
-      /// UPDATE STATE
-      punchInTime = now;
-      punchOutTime = null;
-      isRunning = true;
-      punchStatus = "out";
-      statusText = "Punched In";
-      locationAddress = location;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Punch In Successful ✅")),
+    );
 
-      await loadAttendance();
-      notifyListeners();
-
-      // /// CLOSE LOADER
-      // if (context.mounted) Navigator.pop(context);
-
-      /// SUCCESS POPUP
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Punch In Successful"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("📅 Date: ${DateFormat('dd MMM yyyy').format(now)}"),
-              const SizedBox(height: 5),
-              Text("🕧 Time: ${DateFormat('hh:mm a').format(now)}"),
-              const SizedBox(height: 5),
-              Text("📍 Location: $location"),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (context.mounted) Navigator.pop(context); // stop loader
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
+    notifyListeners();
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error: $e")),
+    );
   }
+}Future<void> punchOut(BuildContext context) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || punchInTime == null) return;
 
-  // PUNCH OUT
-  Future<void> punchOut(BuildContext context) async {
-    final user = supabase.auth.currentUser;
-    if (user == null || punchInTime == null) return;
+  final now = DateTime.now();
+  final dateOnly = DateFormat('yyyy-MM-dd').format(now);
 
-    final picker = ImagePicker();
+  try {
+    await supabase
+        .from('attendance')
+        .update({
+          'punch_out': now.toIso8601String(),
+        })
+        .eq('user_id', user.id)
+        .eq('date', dateOnly);
 
-    /// OPEN CAMERA
-    final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+    punchOutTime = now;
+    punchStatus = "done";
+    statusText = "Punched Out";
 
-    /// If user cancels camera
-    if (photo == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Punch out cancelled")));
-      return;
-    }
-
-    final now = DateTime.now();
-    final dateOnly = DateFormat('yyyy-MM-dd').format(now);
-
-    try {
-      /// UPDATE DB (NO IMAGE STORED)
-      await supabase
-          .from('attendance')
-          .update({'punch_out': now.toIso8601String()})
-          .eq('user_id', user.id)
-          .eq('date', dateOnly);
-
-      /// UPDATE LOCAL STATE
-      punchOutTime = now;
-      isRunning = false;
-      punchStatus = "done";
-      statusText = "Punched Out";
-
-      notifyListeners();
-
-      /// SUCCESS MESSAGE
-      // ScaffoldMessenger.of(
-      //   context,
-      // ).showSnackBar(const SnackBar(content: Text("Punch Out Successful")));
-    } catch (e) {
-      // ScaffoldMessenger.of(
-      //   context,
-      // ).showSnackBar(SnackBar(content: Text("Punch out failed: $e")));
-    }
+    notifyListeners();
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Punch out failed: $e")),
+    );
   }
-
+}
  Future<void> loadTodayPunch() async {
   final user = supabase.auth.currentUser;
   if (user == null) return;

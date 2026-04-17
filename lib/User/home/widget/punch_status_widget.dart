@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/User/home/widget/live_work_timer.dart';
 import 'package:zeedz_attendance/widget/punchstatusskeleton.dart';
@@ -30,8 +31,7 @@ class PunchStatusCard extends StatefulWidget {
 }
 
 class _PunchStatusCardState extends State<PunchStatusCard> {
-  Map<String, dynamic>? cachedHoliday;
-  late Future<void> initFuture;
+  late Future<Map<String, dynamic>?> initFuture;
 
   @override
   void initState() {
@@ -39,7 +39,7 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
     initFuture = loadHolidayOnce();
   }
 
-  Future<void> loadHolidayOnce() async {
+  Future<Map<String, dynamic>?> loadHolidayOnce() async {
     final today = DateTime.now();
 
     final dateStr =
@@ -51,12 +51,12 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
         .eq('holiday_date', dateStr)
         .maybeSingle();
 
-    cachedHoliday = response;
+    return response;
   }
 
   @override
   Widget build(BuildContext context) {
-    final punch = context.select((PunchProvider p) => p);
+    final punch = context.watch<PunchProvider>();
     final size = MediaQuery.of(context).size;
 
     final today = DateTime.now();
@@ -69,19 +69,20 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
 
     final schedule = currentUser['work_schedule'] ?? "mon_sat";
 
-    bool isOnLeave = punch.leaveList.any((leave) {
+    /// ✅ FIXED: safe leave check
+    final isOnLeave = punch.leaveList.any((leave) {
       if (leave['user_id'] != currentUserId) return false;
       if (leave['status'] != 'approved') return false;
 
       final start = DateTime.parse(leave['start_date']);
       final end = DateTime.parse(leave['end_date']);
 
-      final todayOnly = DateTime(today.year, today.month, today.day);
-      final startOnly = DateTime(start.year, start.month, start.day);
-      final endOnly = DateTime(end.year, end.month, end.day);
+      final t = DateTime(today.year, today.month, today.day);
+      final s = DateTime(start.year, start.month, start.day);
+      final e = DateTime(end.year, end.month, end.day);
 
-      return !todayOnly.isBefore(startOnly) &&
-          !todayOnly.isAfter(endOnly);
+      return (t.isAtSameMomentAs(s) || t.isAfter(s)) &&
+          (t.isAtSameMomentAs(e) || t.isBefore(e));
     });
 
     final isSunday = today.weekday == DateTime.sunday;
@@ -91,40 +92,53 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
         ? (isSaturday || isSunday)
         : isSunday;
 
-    final isHoliday = !isOnLeave && (cachedHoliday != null || isWeekend);
-    final holidayName = cachedHoliday?['name'] ?? "Holiday";
-
-    String statusText;
-    Color bgColor;
-    Color textColor;
-
-    if (isOnLeave) {
-      statusText = "On Leave";
-      bgColor = AppColors.shadowroyalblue;
-      textColor = AppColors.royalblue;
-    } else if (isHoliday) {
-      statusText = "Holiday";
-      bgColor = Colors.blue.shade100;
-      textColor = Colors.blue;
-    } else if (punch.punchOutTime != null) {
-      statusText = "Punched Out";
-      bgColor = AppColors.shadowred;
-      textColor = Colors.red;
-    } else if (punch.punchInTime != null) {
-      statusText = "Pending";
-      bgColor = Colors.orange.shade100;
-      textColor = Colors.orange;
-    } else {
-      statusText = "Punch In";
-      bgColor = Colors.grey.shade200;
-      textColor = Colors.grey;
-    }
-
-    return FutureBuilder(
+    return FutureBuilder<Map<String, dynamic>?>(
       future: initFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const PunchStatusSkeleton();
+        }
+
+        final holiday = snapshot.data;
+        final isHoliday = holiday != null;
+        final holidayName = holiday?['name'] ?? "Holiday";
+
+        /// =========================
+        /// ✅ STATUS LOGIC FIXED
+        /// =========================
+        String statusText;
+        Color bgColor;
+        Color textColor;
+
+        if (isOnLeave) {
+          statusText = "On Leave";
+          bgColor = AppColors.shadowroyalblue;
+          textColor = AppColors.royalblue;
+        } 
+        else if (isHoliday) {
+          statusText = "Holiday";
+          bgColor = Colors.blue.shade100;
+          textColor = Colors.blue;
+        } 
+        else if (isWeekend) {
+          statusText = "Weekend";
+          bgColor = Colors.blue.shade50;
+          textColor = Colors.blueGrey;
+        } 
+        else if (punch.punchOutTime != null) {
+          statusText = "Punched Out";
+          bgColor = AppColors.shadowred;
+          textColor = Colors.red;
+        } 
+        else if (punch.punchInTime != null) {
+          statusText = "Pending";
+          bgColor = Colors.orange.shade100;
+          textColor = Colors.orange;
+        } 
+        else {
+          statusText = "Punch In";
+          bgColor = Colors.grey.shade200;
+          textColor = Colors.grey;
         }
 
         return Padding(
@@ -141,12 +155,15 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                /// HEADER
                 Row(
                   children: [
                     const Text(
                       "Punch Status",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     const Spacer(),
                     Container(
@@ -172,7 +189,8 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
 
                 SizedBox(height: size.height * 0.01),
 
-                if (!isOnLeave && !isHoliday)
+                /// IN / OUT TIME
+                if (!isOnLeave && !isHoliday && !isWeekend)
                   Row(
                     children: [
                       const Icon(Icons.access_time, size: 17),
@@ -193,6 +211,7 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
                     ],
                   ),
 
+                /// LEAVE UI
                 if (isOnLeave)
                   const Padding(
                     padding: EdgeInsets.only(top: 10),
@@ -205,98 +224,92 @@ class _PunchStatusCardState extends State<PunchStatusCard> {
                     ),
                   ),
 
-               if (!isOnLeave && isHoliday)
-                Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-        /// TIMELINE DOT + LINE
-                Column(
-                children: [
-                Container(
-                 width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(
-                  color: Colors.blue,
-                  shape: BoxShape.circle,
-                  ),
-                ),
-                Container(
-                 width: 2,
-                  height: 40,
-                  color: Colors.blue.shade100,
-                ),
-              ],
-            ),
+                /// HOLIDAY UI (UNCHANGED DESIGN)
+                if (!isOnLeave && isHoliday)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Column(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: Colors.blue,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            Container(
+                              width: 2,
+                              height: 40,
+                              color: Colors.blue,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
 
-          const SizedBox(width: 12),
-
-        /// CONTENT
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                /// TITLE ROW
-                Row(
-                  children: const [
-                    Text(
-                      "🎉 Holiday",
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Text(
+                                      "🎉 Holiday",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "EVENT",
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        letterSpacing: 1,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  holidayName,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Office Closed • No Attendance Required",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      "EVENT",
-                      style: TextStyle(
-                        fontSize: 10,
-                        letterSpacing: 1,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 6),
-
-                /// REASON (IMPORTANT PART)
-                Text(
-                  holidayName,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800,
                   ),
-                ),
 
-                const SizedBox(height: 4),
-
-                /// SMALL TAG
-                Text(
-                  "Office Closed • No Attendance Required",
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    ),
-  ),
+                /// WORK TIMER
                 if (!isOnLeave &&
                     !isHoliday &&
+                    !isWeekend &&
                     punch.punchStatus == "done")
                   Container(
                     padding: const EdgeInsets.all(15),

@@ -41,26 +41,33 @@ class PunchingWidget extends StatelessWidget {
       return const SizedBox();
     }
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: size.height * 0.06,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: isPunchIn ? AppColors.green : AppColors.red,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            isPunchIn ? "Punch In" : "Punch Out",
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+   return GestureDetector(
+  onTap: punchStatus == "done" ? null : onTap,
+  child: Container(
+    height: size.height * 0.06,
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: punchStatus == "done"
+          ? Colors.grey
+          : isPunchIn
+              ? AppColors.green
+              : AppColors.red,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Center(
+      child: Text(
+        punchStatus == "done"
+            ? "Completed"
+            : isPunchIn
+                ? "Punch In"
+                : "Punch Out",
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
         ),
       ),
-    );
-  }
+    ),
+  ),
+);}
 }

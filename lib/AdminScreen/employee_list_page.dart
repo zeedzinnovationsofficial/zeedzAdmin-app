@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/AdminScreen/add_user_page.dart';
+import 'package:zeedz_attendance/User/home/login_page.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/employeeskeleton.dart';
@@ -35,37 +36,50 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
 
       setState(() {});
     } catch (e) {
+      
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
- Future<void> deleteUser(String userId) async {
+Future<void> deleteUser(String userId) async {
   final currentUser = supabase.auth.currentUser;
+  final currentRole = context.read<PunchProvider>().role;
 
-  if (currentUser?.id == userId) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("You cannot delete yourself")),
-    );
-    return;
-  }
+  final isSelfDelete = currentUser?.id == userId;
 
   try {
-    await supabase.from('users').delete().eq('id', userId);
+    final response = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId)
+        .select();
+
+    print("DELETE RESPONSE: $response");
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("User Deleted Successfully")),
     );
 
-    setState(() {}); // refresh UI
+    // 🔥 IMPORTANT: logout if self delete
+    if (isSelfDelete) {
+      await supabase.auth.signOut();
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
+    } else {
+      setState(() {});
+    }
   } catch (e) {
+    print("DELETE ERROR: $e");
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Delete failed: $e")),
     );
   }
-} @override
-  Widget build(BuildContext context) {
+}Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final currentRole = context.watch<PunchProvider>().role;
     // ignore: unused_local_variable
@@ -209,40 +223,34 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
                         currentRole == 'admin' ||
                         currentRole == 'hr')
                       PopupMenuButton<String>(
-                        onSelected: (value) async {
-                          if (value == 'delete') {
-                            if (user['role'] == 'superadmin') {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("SuperAdmin cannot be deleted"),
-                                ),
-                              );
-                              return;
-                            }
+  onSelected: (value) async {
+    if (value == 'delete') {
 
-                            bool confirm = await confirmAction(
-                              "Confirm you want delete ${user['name']} ?",
-                            );
+      bool confirm = await confirmAction(
+        "Confirm you want delete ${user['name']} ?",
+      );
 
-                            if (confirm) {
-                              await deleteUser(user['id']);
-                            }
-                          } else {
-                            String roleText = value == "admin"
-                                ? "Admin"
-                                : value == "hr"
-                                ? "HR"
-                                : "Employee";
+      if (confirm) {
+        await deleteUser(user['id']);
+      }
 
-                            bool confirm = await confirmAction(
-                              "Confirm you want make ${user['name']} $roleText ?",
-                            );
+    } else {
+      String roleText = value == "admin"
+          ? "Admin"
+          : value == "hr"
+          ? "HR"
+          : "Employee";
 
-                            if (confirm) {
-                              await updateRole(user['id'], value);
-                            }
-                          }
-                        },
+      bool confirm = await confirmAction(
+        "Confirm you want make ${user['name']} $roleText ?",
+      );
+
+      if (confirm) {
+        await updateRole(user['id'], value);
+      }
+    }
+  },
+
                         itemBuilder: (context) => const [
                           PopupMenuItem(
                             value: 'admin',
@@ -261,7 +269,7 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
                             ),
                           ),
                         ],
-                      ),
+                      ), 
                   ],
                 ),
               );

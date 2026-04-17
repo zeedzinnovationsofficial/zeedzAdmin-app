@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:flutter/material.dart';
 
 class RecentRecords extends StatelessWidget {
   final List<Map<String, dynamic>> records; // ✅ ADD THIS
