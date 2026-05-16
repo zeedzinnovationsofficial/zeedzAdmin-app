@@ -52,6 +52,7 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
         .select()
         .eq('user_id', user.id)
         .eq('status', 'approved');
+          if (!mounted) return;
 
     setState(() {
       attendanceList =
@@ -178,6 +179,7 @@ class _AttendanceSummaryWidgetState extends State<AttendanceSummaryWidget> {
             valueColor: AppColors.royalblue,
           ),
         ),
+        
       ],
     );
   }

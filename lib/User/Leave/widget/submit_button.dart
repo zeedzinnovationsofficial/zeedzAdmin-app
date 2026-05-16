@@ -75,7 +75,7 @@ class SubmitButton extends StatelessWidget {
                     "Leave submitted successfully\nWait for approval",
                   ),
                 ),
-              );
+              ); Navigator.pop(context);
             } catch (e) {
               ScaffoldMessenger.of(
                 context,

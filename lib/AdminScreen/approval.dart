@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
+import 'package:zeedz_attendance/widget/attendanceskeleton.dart';
 
 class AttendanceApproval extends StatefulWidget {
   final bool hasBottomNav; 
@@ -26,7 +27,8 @@ class _AdminPageState extends State<AttendanceApproval> {
   Set<dynamic> selectedIds = {};
   bool selectAll = false;
   Future<List<Map<String, dynamic>>> fetchAttendance() async {
-    var query = supabase.from('attendance').select().eq('status', 'pending');
+    var query = supabase.from('attendance').select()
+   .eq('status', 'pending');
 
     if (startDate != null && endDate != null) {
       query = query
@@ -111,9 +113,13 @@ class _AdminPageState extends State<AttendanceApproval> {
 
     return Scaffold(
       body: RefreshIndicator(
+        
         onRefresh: () async {
-          await context.read<PunchProvider>().loadTodayPunch();
-        },
+  setState(() {
+    attendanceFuture = fetchAttendance();
+    
+  });
+},
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -160,10 +166,9 @@ class _AdminPageState extends State<AttendanceApproval> {
 
                                     if (selectAll) {
                                       for (var item in attendance) {
-                                        if (item['punch_in'] != null &&
-                                            item['punch_out'] != null) {
+                                        
                                           selectedIds.add(item['id']);
-                                        }
+                                        
                                       }
                                     }
                                   });
@@ -229,12 +234,11 @@ class _AdminPageState extends State<AttendanceApproval> {
               /// LIST
               Expanded(
                 child: FutureBuilder<List<Map<String, dynamic>>>(
-                  future: fetchAttendance(),
+                  future: attendanceFuture,
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
+                   if (snapshot.connectionState == ConnectionState.waiting) {
+  return const AttendanceSkeleton();
+}
                     final attendance = snapshot.data ?? [];
 
                     if (attendance.isEmpty) {
@@ -399,6 +403,41 @@ class _AdminPageState extends State<AttendanceApproval> {
 
   /// APPROVE SINGLE
   Future<void> approveAttendance(dynamic id) async {
+  print("Approving ID: $id");
+
+  final res = await supabase
+      .from('attendance')
+      .update({
+        'status': 'approved',
+        'approved_at': DateTime.now().toIso8601String(),
+      })
+      .eq('id', id)
+      .select();
+await context.read<PunchProvider>().loadAllPendingCount();
+ 
+  print("Response: $res");
+
+  setState(() {
+     attendanceFuture = fetchAttendance();
+  });
+}
+/// REJECT SINGLE
+Future<void> rejectAttendance(dynamic id, String reason) async {
+  final res = await supabase
+      .from('attendance')
+      .update({
+        'status': 'rejected',
+        'reject_reason': reason.isEmpty ? null : reason, // ✅ HERE
+        'rejected_at': DateTime.now().toIso8601String(),
+      })
+      .eq('id', id.toString().trim())
+      .select();
+
+  print("REJECT RESPONSE: $res");
+}
+/// APPROVE BULK
+  Future<void> approveSelected() async {
+  for (var id in selectedIds) {
     await supabase
         .from('attendance')
         .update({
@@ -406,98 +445,88 @@ class _AdminPageState extends State<AttendanceApproval> {
           'approved_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id);
-
-    setState(() {
-      attendanceFuture = fetchAttendance();
-    });
   }
+await context.read<PunchProvider>().loadAllPendingCount();
 
-  /// REJECT SINGLE
-  Future<void> rejectAttendance(dynamic id, String reason) async {
+  setState(() {
+    selectedIds.clear();
+    selectAll = false;
+    attendanceFuture = fetchAttendance();
+  });
+}/// REJECT BULK
+ Future<void> rejectSelected(String reason) async {
+  
+  for (var id in selectedIds) {
     await supabase
         .from('attendance')
         .update({
           'status': 'rejected',
           'reject_reason': reason,
-          'approved_at': DateTime.now().toIso8601String(),
+          'rejected_at': DateTime.now().toIso8601String(),
         })
-        .eq('id', id);
-
-    setState(() {
-      attendanceFuture = fetchAttendance();
-    });
+        .eq('id', id.toString().trim());
   }
+await context.read<PunchProvider>().loadAllPendingCount();
 
-  /// APPROVE BULK
-  Future<void> approveSelected() async {
-    for (var id in selectedIds) {
-      await supabase
-          .from('attendance')
-          .update({
-            'status': 'approved',
-            'approved_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', id);
-    }
+  setState(() {
+    selectedIds.clear();
+    selectAll = false;
+    attendanceFuture = fetchAttendance();
+  });
+}
 
-    setState(() {
-      selectedIds.clear();
-      selectAll = false;
-      attendanceFuture = fetchAttendance();
-    });
-  }
+ void showRejectDialog(dynamic id) {
+  final controller = TextEditingController();
 
-  /// REJECT BULK
-  Future<void> rejectSelected(String reason) async {
-    for (var id in selectedIds) {
-      await supabase
-          .from('attendance')
-          .update({
-            'status': 'rejected',
-            'reject_reason': reason,
-            'approved_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', id);
-    }
-
-    setState(() {
-      selectedIds.clear();
-      selectAll = false;
-      attendanceFuture = fetchAttendance();
-    });
-  }
-
-  void showRejectDialog(dynamic id) {
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Reject Attendance"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "Enter reject reason"),
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text("Reject Attendance"),
+      content: TextField(
+        controller: controller,
+        decoration: const InputDecoration(
+          hintText: "Enter reject reason",
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () {
-              final reason = controller.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(context);
-              rejectAttendance(id, reason);
-            },
-            child: const Text("Submit", style: TextStyle(color: Colors.red)),
-          ),
-        ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Cancel"),
+        ),
 
-  void showBulkRejectDialog() {
+        TextButton(
+          onPressed: () async {
+            final reason = controller.text.trim();
+
+            if (reason.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Please enter reject reason")),
+              );
+              return;
+            }
+
+            Navigator.pop(context);
+
+            await rejectAttendance(id, reason);
+await context.read<PunchProvider>().loadAllPendingCount();
+
+            setState(() {
+              attendanceFuture = fetchAttendance();
+            });
+
+            if (!context.mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Attendance Rejected")),
+            );
+          },
+          child: const Text("Submit", style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+}
+void showBulkRejectDialog() {
     final controller = TextEditingController();
 
     showDialog(
@@ -519,7 +548,9 @@ class _AdminPageState extends State<AttendanceApproval> {
               if (reason.isEmpty) return;
               Navigator.pop(context);
               rejectSelected(reason);
+              
             },
+            
             child: const Text("Submit", style: TextStyle(color: Colors.red)),
           ),
         ],
@@ -713,7 +744,8 @@ class _AdminPageState extends State<AttendanceApproval> {
           'approved_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id);
-
+await context.read<PunchProvider>().loadAllPendingCount();
+ 
     setState(() {
       attendanceFuture = fetchAttendance();
     });

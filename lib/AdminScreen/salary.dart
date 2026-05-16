@@ -12,191 +12,852 @@ import 'package:zeedz_attendance/widget/smallcard.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 
 class SalaryDashboardPage extends StatefulWidget {
+  
   const SalaryDashboardPage({super.key});
 
   @override
-  State<SalaryDashboardPage> createState() => _SalaryDashboardPageState();
+  State<SalaryDashboardPage> createState() =>
+      _SalaryDashboardPageState();
 }
 
-class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
+class _SalaryDashboardPageState
+    extends State<SalaryDashboardPage> {
+     DateTime? joiningDate;
   final supabase = Supabase.instance.client;
-
-  int totalDays = 30;
-  int sundays = 0;
-  int holidays = 0;
-  int unpaidLeaves = 0;
-
+ List<Map<String, double>> monthlyData = [];
+List<int> chartMonths = [];
+ double monthlyTargetHours = 0;
+ double remainingHours = 0;
+ double totalWorkedHours = 0;
+ double earnedToday = 0;
+double todayNet = 0;
+double totalNet = 0;
+double todayDeduction = 0;
+double totalDeductionAll = 0;
+double cycleDeductionLive = 0;
   double net = 0;
   double grossSalary = 0;
   double totalDeduction = 0;
-
+ double totalSalary = 0;
   String gross = "₹0";
   String deduction = "₹0";
-
+  double leaveDeduction = 0;
+bool absentChecked = false;
   List<Map<String, dynamic>> recentList = [];
 
   bool animateSalary = false;
   bool isLoading = true;
 
   Timer? timer;
-
-  int getSundaysInMonth(int year, int month) {
-    int count = 0;
-    int daysInMonth = DateTime(year, month + 1, 0).day;
-
-    for (int i = 1; i <= daysInMonth; i++) {
-      if (DateTime(year, month, i).weekday == DateTime.sunday) {
-        count++;
-      }
+   // 👇 PASTE HERE
+  double getSalaryByRole(String role) {
+    switch (role) {
+      case 'intern':
+        return 3000;
+      case 'hr':
+        return 5000;
+      case 'admin':
+        return 8000;
+      case 'super_admin':
+        return 10000;
+      default:
+        return 4000;
     }
-    return count;
   }
 
-  Future<int> fetchHolidays() async {
-    final now = DateTime.now();
+ DateTime getCycleStart(DateTime joiningDate, DateTime now) {
+  DateTime start = joiningDate;
 
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
+  while (true) {
+    final next = DateTime(
+      start.year,
+      start.month,
+      start.day,
+    ).add(const Duration(days: 30));
 
-    final response = await supabase
-        .from('holidays')
-        .select()
-        .gte('holiday_date', start.toIso8601String())
-        .lt('holiday_date', end.toIso8601String());
+    if (now.isBefore(next)) break;
 
-    return response.length;
+    start = next;
   }
 
-  Future<int> fetchUnpaidLeaves() async {
-    final userId = supabase.auth.currentUser!.id;
-
-    final response = await supabase
-        .from('leave_requests')
-        .select()
-        .eq('user_id', userId)
-        .eq('status', 'approved')
-        .eq('leave_type', 'unpaid');
-
-    return response.length;
+  return start;
+} /// ✅ DATE FORMAT
+  String getTodayDate(DateTime now) {
+    return "${now.year.toString().padLeft(4, '0')}-"
+        "${now.month.toString().padLeft(2, '0')}-"
+        "${now.day.toString().padLeft(2, '0')}";
   }
 
-  Future<void> calculateSalary() async {
+  /// ✅ IGNORE TIMEZONE COMPLETELY
+  DateTime parsePunchIn(dynamic value) {
+    final raw = value.toString();
+    final dt = DateTime.parse(raw);
+
+    return DateTime(
+      dt.year,
+      dt.month,
+      dt.day,
+      dt.hour,
+      dt.minute,
+      dt.second,
+    );
+  }
+  
+  Future<DateTime> getJoiningDate() async {
+  final userId = supabase.auth.currentUser!.id;
+
+  final response = await supabase
+      .from('users') // change if your table name differs
+      .select('joining_date')
+      .eq('id', userId)
+      .single();
+
+  return DateTime.parse(response['joining_date']);
+}
+  Future<double> loadCurrentCycleEarnedFromDB() async {
+  final userId = supabase.auth.currentUser!.id;
+  final now = DateTime.now();
+
+  if (joiningDate == null) return 0;
+
+  final cycleStart = getCycleStart(joiningDate!, now);
+  final cycleEnd = cycleStart.add(const Duration(days: 29));
+
+  final response = await supabase
+      .from('attendance')
+      .select('earned_amount,date')
+      .eq('user_id', userId)
+      .gte(
+        'date',
+        "${cycleStart.year.toString().padLeft(4, '0')}-"
+        "${cycleStart.month.toString().padLeft(2, '0')}-"
+        "${cycleStart.day.toString().padLeft(2, '0')}",
+      )
+      .lte(
+        'date',
+        "${cycleEnd.year.toString().padLeft(4, '0')}-"
+        "${cycleEnd.month.toString().padLeft(2, '0')}-"
+        "${cycleEnd.day.toString().padLeft(2, '0')}",
+      );
+
+  double total = 0;
+
+  for (var row in response) {
+    total += double.tryParse(row['earned_amount'].toString()) ?? 0;
+  }
+
+  return total;
+}
+Future<double> loadCurrentCycleDeductionFromDB() async {
+  final userId = supabase.auth.currentUser!.id;
+  final now = DateTime.now();
+
+  if (joiningDate == null) return 0;
+
+  final cycleStart = getCycleStart(joiningDate!, now);
+  final cycleEnd = cycleStart.add(const Duration(days: 29));
+
+  final response = await supabase
+      .from('attendance')
+      .select('deductions')
+      .eq('user_id', userId)
+      .gte(
+        'date',
+        "${cycleStart.year.toString().padLeft(4, '0')}-"
+        "${cycleStart.month.toString().padLeft(2, '0')}-"
+        "${cycleStart.day.toString().padLeft(2, '0')}",
+      )
+      .lte(
+        'date',
+        "${cycleEnd.year.toString().padLeft(4, '0')}-"
+        "${cycleEnd.month.toString().padLeft(2, '0')}-"
+        "${cycleEnd.day.toString().padLeft(2, '0')}",
+      );
+
+  double total = 0;
+
+  for (var row in response) {
+    total += double.tryParse(row['deductions'].toString()) ?? 0;
+  }
+
+  return total;
+}
+  Future<void> loadSavedSalary() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = supabase.auth.currentUser!.id;
+
+  setState(() {
+    totalNet = prefs.getDouble("total_salary_$userId") ?? 0;
+    totalDeductionAll =
+        prefs.getDouble("total_deduction_$userId") ?? 0;
+  });
+}
+
+Future<void> loadMonthlyData() async {
+  totalWorkedHours = 0;
+
+  final userId = supabase.auth.currentUser!.id;
+  final now = DateTime.now();
+if (joiningDate == null) return;
+
+
+final cycleStart = getCycleStart(joiningDate!, now);
+
+final cycleEnd =
+    cycleStart.add(const Duration(days: 29));
+
+final holidayResponse = await supabase
+    .from('holidays')
+    .select('holiday_date')
+    .gte(
+      'holiday_date',
+      "${cycleStart.year.toString().padLeft(4, '0')}-"
+      "${cycleStart.month.toString().padLeft(2, '0')}-"
+      "${cycleStart.day.toString().padLeft(2, '0')}",
+    )
+    .lte(
+      'holiday_date',
+      "${cycleEnd.year.toString().padLeft(4, '0')}-"
+      "${cycleEnd.month.toString().padLeft(2, '0')}-"
+      "${cycleEnd.day.toString().padLeft(2, '0')}",
+    );
+
+List<String> holidays = holidayResponse
+    .map<String>(
+      (e) => e['holiday_date']
+          .toString()
+          .split('T')[0],
+    )
+    .toList();
+
+
+
+
+int workingDays = 0;
+
+for (
+  DateTime d = cycleStart;
+  !d.isAfter(cycleEnd);
+  d = d.add(const Duration(days: 1))
+){
+  final dateStr =
+      "${d.year.toString().padLeft(4, '0')}-"
+      "${d.month.toString().padLeft(2, '0')}-"
+      "${d.day.toString().padLeft(2, '0')}";
+
+  bool isSunday =
+      d.weekday == DateTime.sunday;
+
+  bool isHoliday =
+      holidays.contains(dateStr);
+
+  if (!isSunday && !isHoliday) {
+    workingDays++;
+  }
+}
+
+monthlyTargetHours = workingDays * 8;
+
+
+// 👇 AFTER THIS ONLY
+final response = await supabase
+    .from('attendance')
+    .select()
+    .eq('user_id', userId)
+    .gte(
+      'date',
+      "${cycleStart.year}-${cycleStart.month.toString().padLeft(2, '0')}-${cycleStart.day.toString().padLeft(2, '0')}",
+    )
+    .order('date');
+ 
+
+
+
+  Map<String, double> earningsMap = {};
+Map<String, double> deductionMap = {};
+
+final role = context.read<PunchProvider>().role;
+
+double monthlySalary = getSalaryByRole(role);
+
+
+double perHour = monthlySalary / 30 / 8;
+
+  // ========================
+  // 1️⃣ MONTHLY EARNINGS LOOP
+  // ========================
+  for (var row in response) {
+
+  if (row['punch_in'] == null) continue;
+
+  final date = DateTime.parse(row['date']);
+final cycleStart = getCycleStart(joiningDate!, date);
+final cycleKey =
+    "${cycleStart.year}-${cycleStart.month}-${cycleStart.day}";
+
+  DateTime punchIn =
+      DateTime.parse(row['punch_in']).toLocal();
+
+    if (row['punch_out'] == null) continue;
+
+DateTime end =
+    DateTime.parse(row['punch_out']).toLocal();
+
+    double worked =
+        end.difference(punchIn).inMinutes / 60;
+
+    /// late
+    final startMinutes = 9 * 60 + 30;
+    final punchMinutes =
+        punchIn.hour * 60 + punchIn.minute;
+
+    double late = 0;
+    if (punchMinutes > startMinutes) {
+      late = (punchMinutes - startMinutes) / 60;
+    }
+
+    double earn = worked * perHour;
+    double deduct = late * perHour;
+
+    earningsMap[cycleKey] = (earningsMap[cycleKey] ?? 0) + earn;
+deductionMap[cycleKey] = (deductionMap[cycleKey] ?? 0) + deduct;
+  }
+
+  // ========================
+  // 2️⃣ TOTAL WORKED HOURS LOOP
+  // ========================
+  for (var row in response) {
+    if (row['punch_in'] == null || row['punch_out'] == null) continue;
+
+    final punchIn =
+        DateTime.parse(row['punch_in']).toLocal();
+
+    final punchOut =
+        DateTime.parse(row['punch_out']).toLocal();
+
+    double worked =
+        punchOut.difference(punchIn).inMinutes / 60;
+
+    totalWorkedHours += worked;
+  }
+
+  // ========================
+  // 3️⃣ CHART DATA
+  // ========================
+  List<Map<String, double>> tempData = [];
+  List<int> tempMonths = [];
+
+ final keys = earningsMap.keys.toList();
+
+for (String key in keys) {
+  final parts = key.split('-');
+  final month = int.parse(parts[1]);
+
+  tempData.add({
+    "earnings": earningsMap[key] ?? 0,
+    "deduction": deductionMap[key] ?? 0,
+  });
+
+  tempMonths.add(month);
+}
+  if (tempData.isEmpty) {
+    tempData.add({"earnings": 0, "deduction": 0});
+    tempMonths.add(now.month);
+  }
+
+  if (tempData.length > 5) {
+    tempData = tempData.sublist(tempData.length - 5);
+    tempMonths = tempMonths.sublist(tempMonths.length - 5);
+  }
+
+  monthlyData = tempData;
+  chartMonths = tempMonths;
+
+  setState(() {});
+}
+Future<Map<String, dynamic>?> getTodayLeave() async {
+  final userId = supabase.auth.currentUser!.id;
+  final today = getTodayDate(DateTime.now());
+
+  final res = await supabase
+      .from('leave_requests')
+      .select()
+      .eq('user_id', userId)
+      .eq('status', 'approved')
+      .lte('start_date', today)
+      .gte('end_date', today)
+      .maybeSingle();
+
+  return res;
+}
+Future<void> createTodayAttendanceIfMissing() async {
+  final userId = supabase.auth.currentUser!.id;
+  final todayDate = getTodayDate(DateTime.now());
+
+  // ✅ first check leave
+  final todayLeave = await getTodayLeave();
+
+  // leave irundha attendance create panna venda
+  if (todayLeave != null) return;
+
+  final existing = await supabase
+      .from('attendance')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', todayDate)
+      .maybeSingle();
+
+  if (existing == null) {
     final role = context.read<PunchProvider>().role;
 
-    double monthlySalary;
+   double monthlySalary = getSalaryByRole(role);
 
-    if (role == 'intern') {
-      monthlySalary = 3000;
-    } else if (role == 'hr') {
-      monthlySalary = 5000;
-    } else {
-      monthlySalary = 4000;
-    }
+    double perDay = monthlySalary / 30;
 
-    final now = DateTime.now();
+    await supabase.from('attendance').insert({
+      'user_id': userId,
+      'date': todayDate,
+      'punch_in': null,
+      'punch_out': null,
+      'earned_amount': 0,
+      'deductions': perDay,
+      'status': 'absent',
+    });
+  }
+}
+Future<void> calculateSalary() async {
+     print("CALCULATE START");
 
-    sundays = getSundaysInMonth(now.year, now.month);
-    holidays = await fetchHolidays();
-    unpaidLeaves = await fetchUnpaidLeaves();
+  final now = DateTime.now();
+  final todayDate = getTodayDate(now);
+  final userId = supabase.auth.currentUser!.id;
+   final role = context.read<PunchProvider>().role;
+final todayLeave = await getTodayLeave();
+ double monthlySalary = getSalaryByRole(role);
+  double perDay = monthlySalary / 30;  
 
-    int workingDays = totalDays - sundays - holidays;
-    if (workingDays <= 0) workingDays = 1;
+  final response = await supabase
+    .from('attendance')
+    .select('id,punch_in,punch_out,status,date,earned_amount,deductions')
+    .eq('user_id', userId)
+    .eq('date', todayDate);
 
-    double perDay = monthlySalary / workingDays;
-    double perHour = perDay / 8;
+  final attendance =
+      response.isNotEmpty ? response.first : null;
 
-    /// 🔥 FETCH TODAY ATTENDANCE
-    final todayDate = now.toIso8601String().split('T')[0];
 
-    final attendance = await supabase
-        .from('attendance')
-        .select()
-        .eq('user_id', supabase.auth.currentUser!.id)
-        .eq('date', todayDate)
-        .maybeSingle();
+// ✅ SAVE LEAVE FIRST
+if (attendance == null && todayLeave != null) {
+  final leaveType = todayLeave['leave_type'];
 
-    double workedHours = 0;
-    double lateHours = 0;
+  await supabase.from('attendance').insert({
+    'user_id': userId,
+    'date': todayDate,
+    'earned_amount': 0,
+    'deductions': leaveType == 'unpaid' ? perDay : 0,
+    'status': 'leave',
+  });
 
-    if (attendance != null && attendance['punch_in'] != null) {
-      final punchIn = DateTime.parse(attendance['punch_in']);
+  await calculateSalary(); // refresh after insert
+  return;
+}
 
-      workedHours = now.difference(punchIn).inMinutes / 60;
+final cutoffTime = DateTime(
+  now.year,
+  now.month,
+  now.day,
+  11,
+  0,
+);
 
-      double expectedStartHour = 9.0;
-      double punchHour = punchIn.hour + (punchIn.minute / 60);
 
-      if (punchHour > expectedStartHour) {
-        lateHours = punchHour - expectedStartHour;
-      }
-    }
+if (attendance == null &&
+    todayLeave == null &&
+    now.isAfter(cutoffTime))  {
+  absentChecked = true;
 
-    /// 🔥 CALCULATION
-    double earnedToday = workedHours * perHour;
-    double lateDeduction = lateHours * perHour;
-    double leaveDeduction = unpaidLeaves * perDay;
+  final existing = await supabase
+      .from('attendance')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', todayDate)
+      .maybeSingle();
 
-    totalDeduction = leaveDeduction + lateDeduction;
-    net = earnedToday - lateDeduction;
+  if (existing == null) {
+    await supabase.from('attendance').insert({
+      'user_id': userId,
+      'date': todayDate,
+      'punch_in': null,
+      'punch_out': null,
+      'earned_amount': 0,
+      'deductions': perDay,
+      'status': 'absent',
+    });
+  }
+}
 
-    if (net < 0) net = 0;
+      
 
-    grossSalary = monthlySalary;
-
+  // ❌ STOP IF REJECTED
+  if (attendance != null && attendance['status'] == 'rejected') {
     setState(() {
-      gross = "₹ ${grossSalary.toStringAsFixed(0)}";
-      deduction = "₹ ${totalDeduction.toStringAsFixed(2)}";
-
-      recentList = [
-        {
-          "icon": Icons.account_balance_wallet,
-          "iconColor": Colors.green,
-          "title": "Today Earnings",
-          "subtitle": "${workedHours.toStringAsFixed(1)} hrs worked",
-          "amount": "+ ₹${earnedToday.toStringAsFixed(2)}",
-          "amountColor": Colors.green,
-        },
-        {
-          "icon": Icons.access_time,
-          "iconColor": Colors.orange,
-          "title": "Late Punch",
-          "subtitle": "${lateHours.toStringAsFixed(1)} hrs late",
-          "amount": "- ₹${lateDeduction.toStringAsFixed(2)}",
-          "amountColor": Colors.red,
-        },
-        {
-          "icon": Icons.event_busy,
-          "iconColor": Colors.red,
-          "title": "Unpaid Leave",
-          "subtitle": "$unpaidLeaves days",
-          "amount": "- ₹${leaveDeduction.toStringAsFixed(2)}",
-          "amountColor": Colors.red,
-        },
-      ];
-
+      net = 0;
+      grossSalary = 0;
+      
+      totalDeduction = 0;
       isLoading = false;
     });
-
-    final prefs = await SharedPreferences.getInstance();
-    final alreadyAnimated = prefs.getBool("salary_animated") ?? false;
-
-    if (!alreadyAnimated) {
-      setState(() => animateSalary = true);
-      await prefs.setBool("salary_animated", true);
-    }
+    return;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    calculateSalary();
+  double workedHours = 0;
+  double lateHours = 0;
+  double extraHours = 0;
+  double leaveDeductionLocal = 0;
 
-    /// 🔥 AUTO REFRESH
-    timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      calculateSalary();
+  double perHour = monthlySalary / 30 / 8;
+ 
+
+  // ================= PRESENT =================
+  if (attendance != null && attendance['punch_in'] != null) {
+    final punchIn = parsePunchIn(attendance['punch_in']);
+
+    final startTime = DateTime(
+      punchIn.year,
+      punchIn.month,
+      punchIn.day,
+      9,
+      30,
+    );
+
+    if (punchIn.isAfter(startTime)) {
+      lateHours =
+          punchIn.difference(startTime).inMinutes / 60.0;
+    }
+
+    if (attendance['punch_out'] != null) {
+      final punchOut = parsePunchIn(attendance['punch_out']);
+      workedHours =
+          punchOut.difference(punchIn).inMinutes / 60.0;
+    } else {
+      workedHours =
+          now.difference(punchIn).inMinutes / 60.0;
+    }
+
+    if (workedHours > 8) {
+      extraHours = workedHours - 8;
+    }
+  } else {
+  final isSunday = now.weekday == DateTime.sunday;
+
+  if (!isSunday) {
+    if (todayLeave != null) {
+      // 🔥 LEAVE DAY
+      if (todayLeave['leave_type'] == 'unpaid') {
+        leaveDeductionLocal = perDay; // ✅ deduct only unpaid
+      } else {
+        leaveDeductionLocal = 0;      // ✅ paid leave → NO deduction
+      }
+    } else {
+      // ❌ ABSENT (no punch + no leave)
+      leaveDeductionLocal = perDay;
+    }
+  }
+}
+  double liveSessionHours = 0;
+
+if (attendance != null && attendance['punch_in'] != null) {
+  final punchIn = parsePunchIn(attendance['punch_in']);
+
+  liveSessionHours =
+      DateTime.now().difference(punchIn).inMinutes / 60;
+}
+
+  // ================= CALCULATION =================
+  double netLate = lateHours - extraHours;
+
+  double finalLateHours = netLate > 0 ? netLate : 0;
+  double finalExtraHours = netLate < 0 ? -netLate : 0;
+
+  double normalWork = workedHours > 8 ? 8 : workedHours;
+
+   earnedToday = normalWork * perHour;
+  double lateDeduction = finalLateHours * perHour;
+  double extraEarning = finalExtraHours * perHour;
+double rawDeduction =
+    lateDeduction + leaveDeductionLocal;
+
+double adjustedDeduction = rawDeduction - extraEarning;
+double finalExtraEarning = 0;
+
+if (adjustedDeduction < 0) {
+  finalExtraEarning = -adjustedDeduction;
+  adjustedDeduction = 0;
+}
+ double finalNet =
+    earnedToday + finalExtraEarning - adjustedDeduction;
+
+
+  if (finalNet < 0) finalNet = 0;
+
+  bool isWorkCompleted =
+      attendance != null && attendance['punch_out'] != null;
+    double currentTotal = totalWorkedHours;
+
+if (attendance != null &&
+    attendance['punch_in'] != null &&
+    attendance['punch_out'] == null) {
+  final punchIn = parsePunchIn(attendance['punch_in']);
+
+  final live = DateTime.now()
+      .difference(punchIn)
+      .inMinutes / 60;
+
+  currentTotal += live;
+}
+
+
+// ================= REMAINING HOURS FIX =================
+double todayEffectiveHours = 0;
+
+// 1️⃣ Worked today
+if (attendance != null &&
+    attendance['punch_in'] != null &&
+    attendance['punch_out'] != null) {
+  todayEffectiveHours = workedHours > 8 ? 8 : workedHours;
+}
+
+// 2️⃣ Leave today (paid / unpaid)
+else if (todayLeave != null) {
+  todayEffectiveHours = 8;
+}
+
+// 3️⃣ Absent (no punch + no leave)
+else if (attendance == null ||
+         attendance['punch_in'] == null) {
+  todayEffectiveHours = 8;
+}
+
+// 4️⃣ Sunday
+if (now.weekday == DateTime.sunday) {
+  todayEffectiveHours = 0;
+}
+
+// ✅ FINAL remaining hours
+remainingHours =
+    monthlyTargetHours - (currentTotal + todayEffectiveHours);
+
+if (remainingHours < 0) remainingHours = 0;
+      
+
+  // ================= STOP DOUBLE SALARY =================
+final prefs = await SharedPreferences.getInstance();
+
+
+
+double previousTotal = await loadCurrentCycleEarnedFromDB();
+
+double previousDeduction =
+    prefs.getDouble("total_deduction_$userId") ?? 0;
+
+
+
+
+
+// ================= WORK COMPLETED =================
+if (isWorkCompleted) {
+
+  totalDeduction = adjustedDeduction;
+
+  await supabase
+      .from('attendance')
+      .update({
+        'earned_amount': finalNet,
+        'deductions':  adjustedDeduction,
+      })
+      .eq('id', attendance['id']);
+
+ previousTotal = await loadCurrentCycleEarnedFromDB();
+
+  totalNet = previousTotal;
+
+double cycleBase =
+    await loadCurrentCycleDeductionFromDB();
+
+double cycleExtra = 0;
+
+final role = context.read<PunchProvider>().role;
+
+double monthlySalary = getSalaryByRole(role);
+
+double perHour = monthlySalary / 30 / 8;
+
+final cycleResponse = await supabase
+    .from('attendance')
+    .select('punch_in,punch_out')
+    .eq('user_id', userId);
+
+for (var row in cycleResponse) {
+  if (row['punch_in'] == null || row['punch_out'] == null) continue;
+
+  final inTime = DateTime.parse(row['punch_in']).toLocal();
+  final outTime = DateTime.parse(row['punch_out']).toLocal();
+
+  double worked =
+      outTime.difference(inTime).inMinutes / 60;
+
+  double extra = worked > 8 ? (worked - 8) : 0;
+
+  if (extra > 0) {
+    cycleExtra += extra * perHour;
+  }
+}
+
+totalDeductionAll =
+    (cycleBase - cycleExtra).clamp(0, double.infinity);
+
+  earnedToday = finalNet;
+}
+
+
+else if (attendance == null && todayLeave != null) {
+  final leaveType = todayLeave['leave_type'];
+
+  double earned = 0;
+  double deduct = 0;
+
+  if (leaveType == 'paid') {
+    earned = 0;
+    deduct = 0;
+  } else {
+    earned = 0;
+    deduct = perDay;
+  }
+
+  final existing = await supabase
+      .from('attendance')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', todayDate)
+      .maybeSingle();
+
+  if (existing == null) {
+    await supabase.from('attendance').insert({
+      'user_id': userId,
+      'date': todayDate,
+      'earned_amount': earned,
+      'deductions': deduct,
+      'status': 'leave',
     });
   }
 
+  earnedToday = earned;
+  totalDeduction = deduct;
+  totalDeductionAll = await loadCurrentCycleDeductionFromDB();
+}
+// ================= LIVE WORKING =================
+else {
+
+  earnedToday = finalNet;
+
+
+
+ totalDeduction = adjustedDeduction;
+
+ totalDeductionAll = await loadCurrentCycleDeductionFromDB();
+}
+grossSalary = monthlySalary;
+ 
+
+  // ================= UI UPDATE =================
+  setState(() {
+    gross = "₹ ${grossSalary.toStringAsFixed(0)}";
+    deduction = "₹ ${totalDeduction.toStringAsFixed(2)}";
+    recentList = [
+      {
+        "icon": Icons.account_balance_wallet,
+        "iconColor": Colors.green,
+        "title": "Today Earnings",
+        "subtitle": "${normalWork.toStringAsFixed(2)} hrs worked",
+        "amount": "+ ₹${earnedToday.toStringAsFixed(2)}",
+        "amountColor": Colors.green,
+      },
+      {
+        "icon": Icons.access_time,
+        "iconColor": Colors.orange,
+        "title": "Late Punch",
+        "subtitle": "${lateHours.toStringAsFixed(2)} hrs late",
+        "amount": "₹${lateDeduction.toStringAsFixed(2)}",
+        "amountColor": Colors.red,
+      },
+      {
+        "icon": Icons.trending_up,
+        "iconColor": Colors.blue,
+        "title": "Extra Hours",
+        "subtitle": "${finalExtraHours.toStringAsFixed(2)} hrs extra",
+        "amount": "+ ₹${finalExtraEarning.toStringAsFixed(2)}",
+        "amountColor": Colors.green,
+      },
+      {
+        "icon": Icons.event_busy,
+        "iconColor": Colors.red,
+        "title": "Unpaid Leave",
+        "subtitle": leaveDeductionLocal > 0 ? "Full day leave" : "No leave",
+        "amount": "- ₹${leaveDeductionLocal.toStringAsFixed(2)}",
+        "amountColor": Colors.red,
+      },
+     {
+  "icon": Icons.hourglass_bottom,
+  "iconColor": Colors.purple,
+  "title": "Remaining Hours",
+  "subtitle":
+    "Target ${monthlyTargetHours.toStringAsFixed(0)} hrs/month",
+  "amount": "${remainingHours.toStringAsFixed(2)} hrs",
+  "amountColor": Colors.purple,
+},
+    ];
+
+    isLoading = false;
+
+    if (isWorkCompleted) {
+      timer?.cancel(); 
+    }
+  });
+}
+@override
+void initState() {
+  super.initState();
+
+  () async {
+    // 1️⃣ Get joining date FIRST
+    final jd = await getJoiningDate();
+
+    setState(() {
+      joiningDate = jd;
+    });
+
+    // 2️⃣ Now safe to load monthly data
+    await loadMonthlyData();
+
+    // 3️⃣ Load totals from DB
+   double totalEarned = await loadCurrentCycleEarnedFromDB();
+double totalDeductionDB = await loadCurrentCycleDeductionFromDB();
+setState(() {
+  totalNet = totalEarned;
+  totalDeductionAll = totalDeductionDB;
+  cycleDeductionLive = totalDeductionDB;
+});
+
+    // 4️⃣ Calculate today
+   
+await calculateSalary();
+  }();
+
+  // 5️⃣ Live update
+  timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    calculateSalary();
+  });
+}
   @override
   void dispose() {
     timer?.cancel();
@@ -206,91 +867,79 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-
     return Scaffold(
       backgroundColor: const Color(0xffF5F7FB),
       body: isLoading
           ? const SalarySkeleton()
           : Padding(
-              padding: const EdgeInsets.only(top: 60, bottom: 90),
+              padding:
+                  const EdgeInsets.only(top: 60, bottom: 90),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   children: [
-                    /// SALARY CARD
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xff1FA2FF), Color(0xff12D8FA)],
+                          colors: [
+                            Color(0xff1FA2FF),
+                            Color(0xff12D8FA)
+                          ],
                         ),
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius:
+                            BorderRadius.circular(16),
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
                         children: [
                           const Text("Net Salary",
-                              style: TextStyle(color: Colors.white70)),
-                          SizedBox(height: size.height * 0.02),
-
-                          animateSalary
-                              ? TweenAnimationBuilder<double>(
-                                  tween: Tween(begin: 0, end: net),
-                                  duration: const Duration(seconds: 1),
-                                  builder: (context, value, child) {
-                                    return Text(
-                                      "₹ ${value.toStringAsFixed(0)}",
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.bold),
-                                    );
-                                  },
-                                )
-                              : Text(
-                                  "₹ ${net.toStringAsFixed(0)}",
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.bold),
-                                ),
-
-                          SizedBox(height: size.height * 0.02),
+                              style: TextStyle(
+                                  color: Colors.white70)),
+                          SizedBox(
+                              height: size.height * 0.02),
                           Text(
-                            "Gross: $gross | Deduction: $deduction",
-                            style: const TextStyle(color: Colors.white70),
+                            "₹ ${totalNet.toStringAsFixed(0)}",
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight:
+                                    FontWeight.bold),
+                          ),
+                          SizedBox(
+                              height: size.height * 0.02),
+                          Text(
+                            "Gross: $gross | Deduction: ₹${totalDeductionAll.toStringAsFixed(2)}",
+                            style: const TextStyle(
+                                color: Colors.white70),
                           ),
                         ],
                       ),
                     ),
-
                     SizedBox(height: size.height * 0.02),
-
                     Row(
                       children: [
                         SmallCard(
                           title: "Earnings",
-                          value: "+₹${grossSalary.toStringAsFixed(0)}",
+                          value: "+₹${earnedToday.toStringAsFixed(2)}",
                           isGreen: true,
                         ),
                         SmallCard(
                           title: "Deduction",
-                          value: "-₹${totalDeduction.toStringAsFixed(2)}",
+                          value:
+                              "-₹${totalDeduction.toStringAsFixed(2)}",
                           isRed: true,
                         ),
                       ],
                     ),
-
                     SizedBox(height: size.height * 0.02),
-
                     SectionCard(
                       title: "6-Month Trend",
-                      child: const SalaryBarChart(),
+                      child:  SalaryBarChart(monthlyData: monthlyData, chartMonths:chartMonths),
                     ),
-
                     SizedBox(height: size.height * 0.02),
-
                     RecentRecords(records: recentList),
                   ],
                 ),
@@ -298,4 +947,4 @@ class _SalaryDashboardPageState extends State<SalaryDashboardPage> {
             ),
     );
   }
-}
+} 

@@ -87,65 +87,80 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   // ---------------- SUMMARY ----------------
-  Map<String, int> calculateSummary() {
-    final provider = context.read<PunchProvider>();
+ Map<String, int> calculateSummary() {
+  final provider = context.read<PunchProvider>();
 
-    final joiningDate = DateTime.parse(provider.joiningDate);
-    final schedule = provider.workSchedule;
+  final joiningDate = DateTime.parse(provider.joiningDate);
+  final schedule = provider.workSchedule;
+  final now = DateTime.now();
 
-    int present = 0;
-    int pending = 0;
-    int leave = 0;
-    int absent = 0;
+  int present = 0;
+  int pending = 0;
+  int leave = 0;
+  int absent = 0;
 
-    final now = DateTime.now();
-    final start = joiningDate;
+  final year = now.year;
+  final monthStart = DateTime(year, selectedMonth, 1);
+  final monthEnd = (selectedMonth == now.month)
+      ? DateTime(now.year, now.month, now.day)
+      : DateTime(year, selectedMonth + 1, 0);
 
-    final end = DateTime(now.year, selectedMonth, now.day);
+  for (
+    DateTime d = monthStart;
+    !d.isAfter(monthEnd);
+    d = d.add(const Duration(days: 1))
+  ) {
+    if (d.isBefore(joiningDate)) continue;
+    if (!isWorkingDay(d, schedule)) continue;
+    if (provider.isHoliday(d)) continue;
 
-    for (final record in attendanceList) {
-      final recordDate = DateTime.parse(record['date']);
+    final dateKey = DateFormat('yyyy-MM-dd').format(d);
 
-      if (recordDate.month != selectedMonth) continue;
-      if (recordDate.isBefore(start)) continue;
-      if (selectedMonth == now.month && recordDate.isAfter(now)) continue;
-      
-      if (!isWorkingDay(recordDate, schedule)) continue;
+    final record = attendanceList.where((e) {
+      final dbDate = e['date'].toString().substring(0, 10);
+      return dbDate == dateKey;
+    }).toList();
 
-      final status = record['status'];
+    final leaveRecord = leaveList.where((l) {
+      final start = DateTime.parse(l['start_date']);
+      final end = DateTime.parse(l['end_date']);
+      return !d.isBefore(start) && !d.isAfter(end);
+    }).toList();
 
-      if (status == 'approved') {
+    if (leaveRecord.isNotEmpty) {
+      leave++;
+      continue;
+    }
+
+    if (record.isNotEmpty) {
+      final row = record.first;
+      final status = (row['status'] ?? '').toString().toLowerCase();
+
+      if (status == 'approved' || status == 'present') {
         present++;
       } else if (status == 'pending') {
         pending++;
-      } else if (status == 'absent') {
+      } else if (status == 'leave') {
+        leave++;
+      } else {
         absent++;
       }
+    } else {
+      absent++;
     }
 
-    for (final leaveItem in leaveList) {
-      final startDate = DateTime.parse(leaveItem['start_date']);
-      final endDate = DateTime.parse(leaveItem['end_date']);
-
-      for (
-        DateTime d = startDate;
-        !d.isAfter(endDate);
-        d = d.add(const Duration(days: 1))
-      ) {
-        if (d.month != selectedMonth) continue;
-        if (!isWorkingDay(d, schedule)) continue;
-        leave++;
-      }
-    }
-
-    return {
-      "present": present,
-      "pending": pending,
-      "leave": leave,
-      "absent": absent,
-    };
+    print("DATE $dateKey => absent=$absent");
   }
 
+  print("FINAL ABSENT = $absent");
+
+  return {
+    "present": present,
+    "pending": pending,
+    "leave": leave,
+    "absent": absent,
+  };
+}
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
@@ -271,9 +286,14 @@ class _AttendancePageState extends State<AttendancePage> {
                       String status = "not punchin";
 
                       final record = attendanceList.firstWhere(
-                        (e) => e['date'] == dateKey,
-                        orElse: () => {},
-                      );
+  (e) {
+    final dbDate = DateTime.parse(e['date']).toLocal();
+    return dbDate.year == date.year &&
+        dbDate.month == date.month &&
+        dbDate.day == date.day;
+  },
+  orElse: () => {},
+);
 
                       final leaveRecord = leaveList.firstWhere((leave) {
                         final start = DateTime.parse(leave['start_date']);
@@ -303,12 +323,12 @@ class _AttendancePageState extends State<AttendancePage> {
 
                         if (record['punch_in'] != null) {
                           punchIn =
-                              DateTime.parse(record['punch_in']);
+                             punchIn = DateTime.parse(record['punch_in']).toLocal();
                         }
 
                         if (record['punch_out'] != null) {
                           punchOut =
-                              DateTime.parse(record['punch_out']);
+                             punchOut = DateTime.parse(record['punch_out']).toLocal();
                         }
                       } else {
                         if (dateKey == todayKey) {

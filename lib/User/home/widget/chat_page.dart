@@ -70,7 +70,7 @@ class _ChatPageState extends State<ChatPage> {
     markMessagesAsRead();
     initRecorder();
     loadCurrentUserRole();
-    checkPermission();
+    
     ensureUserExists();
     loadUsers();
 
@@ -159,63 +159,60 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {});
   }
 
-  ///  CHECK PERMISSION (NEW DB)
-  Future<void> checkPermission() async {
-    final res = await supabase
-        .from('chat_permissions')
-        .select()
-        .eq('user_id', currentUser)
-        .maybeSingle();
+ 
+  
+  ///  SEND MESSAGE (NO receiver_id)
+ Future<void> sendMessage(String text) async {
+  if (text.trim().isEmpty) return;
 
-    setState(() {
-      canSend = res != null && res['can_send'] == true;
-    });
+  final currentUser = supabase.auth.currentUser!.id;
+
+  // 🔥 get current user role
+  final roleRes = await supabase
+      .from('users')
+      .select('role,name')
+      .eq('id', currentUser)
+      .single();
+
+  final role = roleRes['role'];
+  print("Current role: $role"); 
+  final senderName = roleRes['name'] ?? "User";
+
+  // ✅ allow only admin / hr / superadmin
+  if (role != 'admin' && role != 'hr' && role != 'superadmin') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Only Admin / HR / Superadmin can send messages"),
+      ),
+    );
+    return;
   }
 
-  ///  SEND MESSAGE (NO receiver_id)
-  Future<void> sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+  await supabase.from('messages').insert({
+    'sender_id': currentUser,
+    'message': text,
+    'status': 'sent',
+    'seen_by': [],
+  });
 
-    final currentUser = supabase.auth.currentUser!.id;
+  messageController.clear();
 
-    // 🔥 sender name
-    final user = await supabase
-        .from('users')
-        .select('name')
-        .eq('id', currentUser)
-        .maybeSingle();
+  final users = await supabase.from('users').select('onesignal_id, id');
 
-    final senderName = user?['name'] ?? "User";
+  for (var u in users) {
+    if (u['id'] == currentUser) continue;
 
-    // 🔥 insert message (NO receiver_id)
-    await supabase.from('messages').insert({
-      'sender_id': currentUser,
-      'message': text,
-      'status': 'sent',
-      'seen_by': [],
-    });
+    final playerId = u['onesignal_id'];
 
-    messageController.clear(); // ✅ clear input
-
-    // 🔥 SEND TO ALL USERS
-    final users = await supabase.from('users').select('onesignal_id, id');
-
-    for (var u in users) {
-      if (u['id'] == currentUser) continue;
-
-      final playerId = u['onesignal_id'];
-
-      if (playerId != null && playerId.toString().isNotEmpty) {
-        await NotificationService.sendNotification(
-          playerId: playerId,
-          title: senderName,
-          body: text,
-        );
-      }
+    if (playerId != null && playerId.toString().isNotEmpty) {
+      await NotificationService.sendNotification(
+        playerId: playerId,
+        title: senderName,
+        body: text,
+      );
     }
   }
-
-  Future<void> uploadVoice(String path) async {
+} Future<void> uploadVoice(String path) async {
     try {
       final file = File(path);
       final fileName = "voice_${DateTime.now().millisecondsSinceEpoch}.m4a";
@@ -408,7 +405,7 @@ class _ChatPageState extends State<ChatPage> {
                           onPressed: () async {
                             Navigator.pop(context); //  instant close
 
-                            await checkPermission();
+                           
 
                             ///  SMALL SNACKBAR (FAST)
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -719,7 +716,7 @@ class _ChatPageState extends State<ChatPage> {
 
           /// INPUT
           Opacity(
-            opacity: canSend ? 1 : 0.5,
+            opacity:1,
             child: isRecordingUI
                 ? buildVoiceUI() // WhatsApp UI
                 : buildNormalInput(), // your current UI
@@ -756,9 +753,9 @@ class _ChatPageState extends State<ChatPage> {
                       textInputAction:
                           TextInputAction.newline, // allow next line
                       decoration: InputDecoration(
-                        hintText: canSend
-                            ? "Type a message"
-                            : "You can't send message",
+                        hintText: (userRole == 'admin' || userRole == 'hr' || userRole == 'superadmin')
+                         ? "Type a message"
+                         : "Only admin can send",
                         hintStyle: const TextStyle(
                           color: Color.fromARGB(255, 255, 255, 255),
                         ),
@@ -777,14 +774,8 @@ class _ChatPageState extends State<ChatPage> {
           GestureDetector(
             onTap: () async {
               if (messageController.text.trim().isNotEmpty) {
-                if (canSend) {
-                  await sendMessage(messageController.text);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Admin restricted messaging")),
-                  );
-                }
-              } else {
+  await sendMessage(messageController.text);
+} else {
                 /// 🎤 VOICE LOGIC
                 if (!isRecorderReady) {
                   await initRecorder();
@@ -919,13 +910,18 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> sendVoice() async {
     print("Send clicked");
-    final res = await supabase
-        .from('chat_permissions')
-        .select('can_send')
-        .eq('user_id', currentUser)
-        .maybeSingle();
+    final roleRes = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', currentUser)
+    .single();
 
-    bool allowed = res != null && res['can_send'] == true;
+final role = roleRes['role'];
+
+bool allowed =
+    role == 'admin' ||
+    role == 'hr' ||
+    role == 'superadmin';
 
     if (!allowed) {
       ScaffoldMessenger.of(context).showSnackBar(

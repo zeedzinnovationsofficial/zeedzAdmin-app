@@ -13,12 +13,29 @@ class AbsentEmployeesPage extends StatefulWidget {
 }
 
 class _AbsentEmployeesPageState extends State<AbsentEmployeesPage> {
-  @override
+ @override
+void initState() {
+  super.initState();
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final punch = context.read<PunchProvider>();
+
+    punch.loadAllAttendance();  
+    punch.fetchLeaveList();     
+  });
+}
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
     print(punch.getMonthAbsentEmployees(widget.month));
-    final employees = punch.getMonthAbsentEmployees(widget.month);
+   final employees = punch.getMonthAbsentEmployees(widget.month);
+
+employees.sort((a, b) {
+  final dateA = DateTime.parse(a['date']);
+  final dateB = DateTime.parse(b['date']);
+
+  return dateB.compareTo(dateA); // latest first
+});
     return Scaffold(
       appBar: AppBar(
         title: const Text("Absent Employees"),

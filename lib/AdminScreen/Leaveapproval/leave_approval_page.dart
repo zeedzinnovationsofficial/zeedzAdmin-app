@@ -266,10 +266,11 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
 
                                         if (leaveType != null) {
                                           await approveLeave(
-                                            leave['id'],
-                                            leave['user_id'],
-                                            leaveType,
-                                          );
+
+  leave['id'],
+  leave['user_id'],
+  leaveType,
+);
                                         }
                                       },
                                       child: const Text(
@@ -343,33 +344,94 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
   }
 
   // ===================== APPROVE =====================
-  Future<void> approveLeave(
-    String leaveId,
-    String userId,
-    String leaveType,
-  ) async {
-    await supabase.from('leave_requests').update({
-      'status': 'approved',
+Future<void> approveLeave( dynamic leaveId,
+ String userId,
+  String leaveType, ) 
+  async {
+     try { 
+      final supabase = Supabase.instance.client;
+
+    final updated = await supabase .from('leave_requests')
+     .update({ 'status': 'approved',
       'leave_type': leaveType,
-      'approved_by': supabase.auth.currentUser?.id,
+       'approved_by': supabase.auth.currentUser!.id,
+        'approved_at': DateTime.now().toIso8601String(),
+         })
+          .eq('id', leaveId)
+           .select();
+
+    if (updated.isEmpty) {
+      throw Exception('Approval failed (check RLS or invalid id)');
+    }
+    final leave = await supabase .from('leave_requests') 
+    .select('start_date, end_date')
+     .eq('id', leaveId) 
+     .single();
+      final DateTime startDate = DateTime.parse(leave['start_date'])
+      .toLocal();
+       final DateTime endDate = DateTime.parse(leave['end_date'])
+       .toLocal();
+       for (DateTime d = startDate;
+    !d.isAfter(endDate);
+    d = d.add(const Duration(days: 1))) {
+
+  final onlyDate = DateTime(d.year, d.month, d.day);
+
+  final existing = await supabase
+      .from('attendance')
+      .select('id,status')
+      .eq('user_id', userId)
+      .eq('date', onlyDate)
+      .maybeSingle();
+
+  if (existing != null) {
+    // 🔥 ALWAYS UPDATE (even if already absent)
+    await supabase.from('attendance').update({
+      'status': 'leave',
+      'earned_amount': 0,
+      'deductions': leaveType == 'unpaid' ? 100 : 0,
       'approved_at': DateTime.now().toIso8601String(),
-    }).eq('id', leaveId);
+    }).eq('id', existing['id']);
 
-    await supabase.from('notifications').insert({
+  } else {
+    await supabase.from('attendance').insert({
       'user_id': userId,
-      'title': 'Leave Approved',
-      'message': 'Your $leaveType leave has been approved.',
+      'date': onlyDate,
+      'status': 'leave',
+      'earned_amount': 0,
+      'deductions': leaveType == 'unpaid' ? 100 : 0,
+      'approved_at': DateTime.now().toIso8601String(),
     });
-
-    await loadLeaves();
   }
+}
+    await loadLeaves();
 
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Leave approved successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Approve failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
   // ===================== REJECT =====================
   Future<void> rejectLeave(
-    String leaveId,
+    dynamic leaveId,
     String userId,
     String rejectReason,
   ) async {
+    
     await supabase.from('leave_requests').update({
       'status': 'rejected',
       'approved_by': supabase.auth.currentUser?.id,

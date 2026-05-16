@@ -89,110 +89,117 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   /// SUMMARY CALCULATION
-  Map<String, int> calculateSummary() {
-    final joiningDate = DateTime.parse(
-      context.read<PunchProvider>().joiningDate,
-    );
-    print("Join date emp: $joiningDate");
-    final schedule = context
-        .read<PunchProvider>()
-        .workSchedule; // mon_fri or mon_sat
-    print("Schedule => $schedule");
-    int present = 0;
-int pending = 0;
-int leave = 0;
-int absent = 0;
+ Map<String, int> calculateSummary() {
+  final joiningDate = DateTime.parse(
+    context.read<PunchProvider>().joiningDate,
+  );
 
-    final now = DateTime.now();
-    final year = now.year;
+  final schedule = context.read<PunchProvider>().workSchedule;
 
-    final monthStart = DateTime(year, selectedMonth, 1);
+  int present = 0;
+  int pending = 0;
+  int leave = 0;
+  int absent = 0;
 
-    /// start counting from join date
-    final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
+  final now = DateTime.now();
+  final year = now.year;
 
-    final end = selectedMonth == now.month
-        ? DateTime(year, selectedMonth, now.day)
-        : DateTime(year, selectedMonth + 1, 0);
+  final monthStart = DateTime(year, selectedMonth, 1);
+  final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
 
-    int workingDays = 0;
+  final end = selectedMonth == now.month
+      ? DateTime(year, selectedMonth, now.day)
+      : DateTime(year, selectedMonth + 1, 0);
 
-    bool isWorkingDay(DateTime d) {
-      if (schedule == "mon_fri") {
-        return d.weekday != DateTime.saturday && d.weekday != DateTime.sunday;
-      } else {
-        return d.weekday != DateTime.sunday;
-      }
+  bool isWorkingDay(DateTime d) {
+    if (schedule == "mon_fri") {
+      return d.weekday != DateTime.saturday &&
+          d.weekday != DateTime.sunday;
+    } else {
+      return d.weekday != DateTime.sunday;
     }
-
-    /// working days
-    for (
-      DateTime d = start;
-      !d.isAfter(end);
-      d = d.add(const Duration(days: 1))
-    ) {
-      if (!isWorkingDay(d)) continue;
-      workingDays++;
-    }
-
-    /// attendance count
-   
-
-    for (final record in attendanceList) {
-      final recordDate = DateTime.parse(record['date']);
-
-      if (recordDate.month != selectedMonth) continue;
-      if (recordDate.isBefore(start)) continue;
-      if (!isWorkingDay(recordDate)) continue;
-
-      if (selectedMonth == now.month && recordDate.isAfter(now)) continue;
-
-      final status = record['status'];
-      print("status :$status");
-      if (status == 'approved') {
-        present++;
-      } else if (status == 'pending') {
-        pending++;
-      } else if (status == 'absent' || status == 'rejected') {
-        absent++;
-
-        print("absent :$absent");
-      }
-    }
-
-    /// leave count
-    for (final leaveItem in leaveList) {
-      final startDate = DateTime.parse(leaveItem['start_date']);
-      final endDate = DateTime.parse(leaveItem['end_date']);
-
-      for (
-        DateTime d = startDate;
-        !d.isAfter(endDate);
-        d = d.add(const Duration(days: 1))
-      ) {
-        if (d.month != selectedMonth) continue;
-        if (d.isBefore(start)) continue;
-        if (!isWorkingDay(d)) continue;
-
-        if (selectedMonth == now.month && d.isAfter(now)) continue;
-
-        leave++;
-      }
-    }
-
-    if (leave > workingDays) leave = workingDays;
-
-    if (absent < 0) absent = 0;
-
-    return {
-      "present": present,
-      "pending": pending,
-      "leave": leave,
-      "absent": absent,
-    };
   }
 
-  @override
+  for (DateTime date = start;
+      !date.isAfter(end);
+      date = date.add(const Duration(days: 1))) {
+
+    final provider = context.read<PunchProvider>();
+
+     if (provider.isHoliday(date)) continue;
+  if (!isWorkingDay(date)) continue;
+
+   final dateKey =
+    "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+final record = attendanceList.firstWhere(
+  (item) {
+    final dbDate = item['date'].toString().substring(0, 10);
+    return dbDate == dateKey;
+  },
+  orElse: () => {},
+);
+print("CHECK DATE: $dateKey");
+print("FOUND RECORD: $record");
+    final leaveRecord = leaveList.firstWhere((leaveItem) {
+      final startLeave = DateTime.parse(leaveItem['start_date']);
+      final endLeave = DateTime.parse(leaveItem['end_date']);
+
+      return !date.isBefore(startLeave) &&
+          !date.isAfter(endLeave);
+    }, orElse: () => {});
+
+    if (leaveRecord.isNotEmpty) {
+      leave++;
+      continue;
+    }
+
+ if (record.isNotEmpty) {
+  final dbStatus = (record['status'] ?? '').toString().toLowerCase();
+  final hasPunchIn = record['punch_in'] != null;
+
+  final cutoff = DateTime(
+    date.year,
+    date.month,
+    date.day,
+    11,
+    0,
+  );
+
+  if (leaveRecord.isNotEmpty) {
+    leave++;
+  } 
+  else if (hasPunchIn) {
+    if (dbStatus == 'pending') {
+      pending++;
+    } else {
+      present++; // approved or any punched-in case
+    }
+  } 
+  else {
+    if (DateTime.now().isAfter(cutoff)) {
+      absent++;
+    }
+  }
+}
+
+else {
+      final today = DateTime(now.year, now.month, now.day);
+
+if (date.isBefore(today)) {
+  absent++;
+}
+    }
+  }
+
+  return {
+    "present": present,
+    "pending": pending,
+    "leave": leave,
+    "absent": absent,
+  };
+}
+ @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     if (isLoading) {
@@ -419,9 +426,14 @@ int absent = 0;
                           "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
                       final record = attendanceList.firstWhere(
-                        (item) => item['date'] == dateKey,
-                        orElse: () => {},
-                      );
+  (item) {
+    final dbDate = DateTime.parse(item['date'])
+        .toIso8601String()
+        .split('T')[0];
+    return dbDate == dateKey;
+  },
+  orElse: () => {},
+);
 
                       final leaveRecord = leaveList.firstWhere((leave) {
                         final start = DateTime.parse(
@@ -441,53 +453,55 @@ int absent = 0;
                         status = "leave";
                       }
                       // Attendance record exists
-                      else if (record.isNotEmpty) {
-                        if (record['status'] == 'approved') {
-                          status = "present";
-                        } else if (record['status'] == 'pending') {
-                          status = "pending";
-                        } else if (record['status'] == 'absent') {
-                          status = "absent";
-                        }
+                    else if (record.isNotEmpty) {
 
-                        if (record['punch_in'] != null) {
-                          punchIn = DateTime.parse(record['punch_in']);
-                        }
+  final hasPunchIn = record['punch_in'] != null;
+  final dbStatus =
+      (record['status'] ?? '').toString().toLowerCase();
 
-                        if (record['punch_out'] != null) {
-                          punchOut = DateTime.parse(record['punch_out']);
-                        }
-                      }
-                      // No DB record
-                      else {
-                      final provider = context.read<PunchProvider>();
-                      if (provider.isHoliday(date)) {
-                      status = "holiday";
-                     }
-                      else if (!isWorkingDay(date)) {
-                      status = "holiday";
-                      }
-                      else {
-                      if (dateKey == todayKey) {
-                      final cutoff = DateTime(
-                     now.year,
-                     now.month,
-                     now.day,
-                     10,
-                     30, 
-                      );
+  final cutoff = DateTime(
+  date.year,
+  date.month,
+  date.day,
+  11,
+  0,
+);
 
-                    if (now.isAfter(cutoff)) {
-                     status = "absent"; // 🔥 AFTER 10:30 = ABSENT
-                     } else {
-                    status = "not punchin";
-                    }
-                    }  
-                     else if (date.isBefore(now)) {
-                      status = "absent";
-                    }
-                    }
-                    }     
+if (hasPunchIn) {
+  status = dbStatus == 'pending' ? "pending" : "present";
+} else {
+  if (DateTime.now().isAfter(cutoff)) {
+    status = "absent";   // 🔥 after 10:30
+  } else {
+    status = "not punchin";
+  }
+}
+  if (record['punch_in'] != null) {
+    punchIn = DateTime.parse(record['punch_in']);
+  }
+
+  if (record['punch_out'] != null) {
+    punchOut = DateTime.parse(record['punch_out']);
+  }
+}// No DB record
+                     else {
+  final provider = context.read<PunchProvider>();
+
+  if (provider.isHoliday(date)) {
+    status = "holiday";
+  } 
+  else if (!isWorkingDay(date)) {
+    status = "holiday";
+  } 
+  else {
+    if (dateKey == todayKey) {
+      status = "not punchin"; // ✅ NO TIME LIMIT
+    } 
+    else if (date.isBefore(now)) {
+      status = "absent";
+    }
+  }
+}   
                       return LeaveHistory(
                         date: date,
                         punchIn: punchIn,

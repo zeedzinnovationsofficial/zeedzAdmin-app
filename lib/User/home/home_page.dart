@@ -24,9 +24,11 @@ import 'package:zeedz_attendance/User/home/widget/punching_widget.dart';
 import 'package:zeedz_attendance/User/profile/profile_page.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/attendance_summary_section.dart';
+import 'package:zeedz_attendance/widget/attendancechart.dart';
 import 'package:zeedz_attendance/widget/summaryrowskeleton.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -44,45 +46,47 @@ class _HomePageState extends State<HomePage> {
  static bool isFirstLoad = true;
 
   @override
-  void initState() {
-    super.initState();
-    
-Future.delayed(Duration.zero, () async {
-  final response = await Supabase.instance.client
-      .from('holidays')
-      .select();
+ 
+void initState() {
+  super.initState();
 
-  setState(() {
-    holidays = List<Map<String, dynamic>>.from(response);
+
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    final provider = context.read<PunchProvider>();
+
+    // ✅ Load holidays
+    final response = await Supabase.instance.client
+        .from('holidays')
+        .select();
+
+    if (mounted) {
+      setState(() {
+        holidays = List<Map<String, dynamic>>.from(response);
+      });
+    }
+
+    // ✅ Load data ONLY FIRST TIME
+    if (isFirstLoad) {
+      await _loadHomeData(provider);
+    }
   });
-});
 
-     
-   final provider = context.read<PunchProvider>();
+  OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+    event.preventDefault();
+    event.notification.display();
 
-if (isFirstLoad) {
-  _loadHomeData(provider);
-}
-    OneSignal.Notifications.addForegroundWillDisplayListener((event) {
-      final notification = event.notification;
-
-      // show notification normally
-      event.preventDefault();
-      event.notification.display();
-
-      // 🔔 your custom UI
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(notification.title ?? "New Notification")),
-      );
-    });
-  }
-  List<Map<String, dynamic>> holidays = [];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(event.notification.title ?? "New Notification")),
+    );
+  });
+}List<Map<String, dynamic>> holidays = [];
    bool get isHoliday => isHolidayToday(holidays);
   
 Future<void> _loadHomeData(PunchProvider provider) async {
  if (isFirstLoad) {
   setState(() {
     isSummaryLoading = true;
+     isFirstLoad = false;
   });
 }
 
@@ -90,11 +94,12 @@ Future<void> _loadHomeData(PunchProvider provider) async {
  
 
   await provider.initializeApp();
-
+ 
   if (provider.role == 'superadmin' ||
       provider.role == 'admin' ||
       provider.role == 'hr') {
     await provider.loadSuperAdminStats();
+    await provider.loadAllPendingCount();
   }
 
   if (!mounted) return;
@@ -553,7 +558,7 @@ isSummaryLoading
           onTap: () {},
         ),
         rightCard: SummaryCard(
-          value: punch.totalPendingEmployees.toString(),
+          value: punch.pendingCount.toString(),
           title: "Pending",
           valueColor: Colors.orange,
           onTap: () {
@@ -839,7 +844,7 @@ isSummaryLoading
                           ],
                           if (role == 'employee' || role == 'intern') ...[
                             const Text(
-                              "Attendance",
+                              "",
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
 
@@ -872,9 +877,13 @@ isSummaryLoading
                             //     valueColor: Colors.orange,
                             //   ),
                             // ),
-                            AttendanceSummaryWidget(
-                              month: DateTime.now().month,
-                            ),
+                          AttendanceRadialChart(
+                            present: punch.presentDays,
+                            absent: punch.getSummary()["absent"] ?? 0,
+                            leave: punch.monthlyLeaveDays,
+                            pending: punch.pendingDays,
+                          ),
+                           
                           ],
                           SizedBox(height: size.height * 0.03),
 
@@ -887,15 +896,18 @@ isSummaryLoading
     child: PunchingWidget(
       isLoading: isLoading,
       punchStatus: punch.punchStatus,
-      onTap: () async {
-        if (punch.punchStatus == "in") {
-          await _handlePunchIn(context);
-          
-        } else if (punch.punchStatus == "out") {
-          await punch.punchOut(context);
-          await context.read<PunchProvider>().loadTodayPunch();
-        }
-      },
+     onTap: () async { print("STATUS: ${punch.punchStatus}");
+ final status = punch.punchStatus.toLowerCase();
+
+print("STATUS CLICKED: $status");
+
+if (status == "approved" || status == "in") {
+  await _handlePunchIn(context);
+} 
+else if (status == "out") {
+  await _handlePunchOut(context);
+}
+}
     ),
   )],
                         SizedBox(height: size.height * 0.18),
@@ -920,11 +932,10 @@ isSummaryLoading
 
     final XFile? photo = await picker.pickImage(source: ImageSource.camera);
 
-    if (photo == null) return;
-
-    // setState(() {
-      // isLoading = true; // START LOADER
-     //});
+  if (photo == null) {
+  setState(() => isLoading = false);
+  return;
+}
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -1021,4 +1032,119 @@ isSummaryLoading
       }
     }
   }
+  
+Future<void> _handlePunchOut(BuildContext context) async {
+  print("👉 Punch Out button pressed");
+  setState(() {
+    isLoading = true;
+  });
+
+  final picker = ImagePicker();
+
+  // 📸 OPEN CAMERA (NO SAVE)
+  final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+
+  if (photo == null) {
+    setState(() => isLoading = false);
+    return;
+  }
+
+  try {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Location Disabled"),
+          content: const Text("Please turn on your location to punch out."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Geolocator.openLocationSettings();
+              },
+              child: const Text("Turn On"),
+            ),
+          ],
+        ),
+      );
+
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Permission Required"),
+          content: const Text(
+            "Location permission is permanently denied. Enable from settings.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Geolocator.openAppSettings();
+              },
+              child: const Text("Open Settings"),
+            ),
+          ],
+        ),
+      );
+
+      return;
+    }
+
+    // 📍 GET LOCATION (optional)
+    final position = await Geolocator.getCurrentPosition();
+
+    List<Placemark> placemarks = await placemarkFromCoordinates(
+      position.latitude,
+      position.longitude,
+    );
+
+    Placemark place = placemarks.first;
+
+    String address =
+        "${place.locality}, ${place.administrativeArea}, ${place.country}";
+
+    // 🔥 ONLY CALL punchOut (NO IMAGE UPLOAD)
+   try {
+  await context.read<PunchProvider>().punchOut(context);
+  print("✅ Punch out success");
+} catch (e) {
+  print("❌ Punch out error: $e");
+}
+
+    await context.read<PunchProvider>().loadTodayPunch();
+
+  } catch (e) {
+    print("PunchOut Error: $e");
+  } finally {
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+}
 }

@@ -17,19 +17,25 @@ class DailydataPage extends StatefulWidget {
   State<DailydataPage> createState() => _DailydataPageState();
 }
 
-late Future<List<Map<String, dynamic>>> leavesFuture;
+
 
 class _DailydataPageState extends State<DailydataPage> {
   DateTime? startDate;
   DateTime? endDate;
-
+Future<List<Map<String, dynamic>>>? leavesFuture;
+Future<bool>? holidayFuture;
   @override
   void initState() {
     super.initState();
-    final provider = context.read<PunchProvider>();
+   final provider = context.read<PunchProvider>();
+
+WidgetsBinding.instance.addPostFrameCallback((_) async {
+  await provider.initializeApp();   // important
+  setState(() {
     leavesFuture = provider.fetchMyLeaves();
     holidayFuture = checkIsHoliday();
-  }
+  });
+});}
 
   /// 🔥 CHECK HOLIDAY FROM DB
   Future<bool> checkIsHoliday() async {
@@ -45,7 +51,7 @@ class _DailydataPageState extends State<DailydataPage> {
 
     return response.isNotEmpty;
   }
-  late Future<bool> holidayFuture;
+ 
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +101,9 @@ class _DailydataPageState extends State<DailydataPage> {
 
                   String status = punch.todayStatus ?? 'pending';
 
+if (punch.punchInTime != null && punch.punchOutTime != null) {
+  status = 'approved';
+}
                   /// ✅ CORRECT PRIORITY
                   if (status == "leave") {
                     status = "leave";
@@ -108,12 +117,19 @@ class _DailydataPageState extends State<DailydataPage> {
                   String statusText = "Not Punched In";
 
                   switch (status) {
-                    case 'approved':
-                      bgColor = AppColors.shadowgreen;
-                      textColor = AppColors.green;
-                      icon = Icons.check_circle_rounded;
-                      statusText = "Present";
-                      break;
+                   case 'approved':
+  if (punch.punchInTime != null) {
+    bgColor = AppColors.shadowgreen;
+    textColor = AppColors.green;
+    icon = Icons.check_circle_rounded;
+    statusText = "Present";
+  } else {
+    bgColor = Colors.grey.shade200;
+    textColor = Colors.grey;
+    icon = Icons.info_outline;
+    statusText = "Not Punched In";
+  }
+  break;
 
                     case 'rejected':
                       bgColor = AppColors.shadowred;
@@ -136,17 +152,19 @@ class _DailydataPageState extends State<DailydataPage> {
                       statusText = "Holiday";
                       break;
 
-                    default:
-                      if (punch.punchInTime != null) {
-                        bgColor = Colors.orange.shade100;
-                        textColor = Colors.orange;
-                        icon = Icons.hourglass_empty;
-                        statusText = "Pending";
-                      } else {
-                        statusText = "Not Punched In";
-                      }
-                  }
-
+                   
+                      default:
+  if (punch.punchInTime != null) {
+    bgColor = Colors.orange.shade100;
+    textColor = Colors.orange;
+    icon = Icons.hourglass_empty;
+    statusText = "Pending";
+  } else {
+    bgColor = Colors.grey.shade200;
+    textColor = Colors.grey;
+    icon = Icons.info_outline;
+    statusText = "Not Punched In";
+  }}
                   return Center(
                     child: Container(
                       padding: const EdgeInsets.all(10),
