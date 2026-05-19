@@ -678,11 +678,26 @@ Future<void> loadAttendance([String? userId]) async {
   final targetUserId = userId ?? user.id;
 
   try {
-    final response = await supabase
-        .from('attendance')
-        .select('user_id, date, status, punch_in, punch_out, earned_amount')
-        .eq('user_id', targetUserId)
-        .order('date', ascending: false);
+    final now = DateTime.now();
+
+DateTime cycleStart;
+DateTime cycleEnd;
+
+if (now.day >= 25) {
+  cycleStart = DateTime(now.year, now.month, 25);
+  cycleEnd = DateTime(now.year, now.month + 1, 24);
+} else {
+  cycleStart = DateTime(now.year, now.month - 1, 25);
+  cycleEnd = DateTime(now.year, now.month, 24);
+}
+
+final response = await supabase
+    .from('attendance')
+    .select('user_id, date, status, punch_in, punch_out, earned_amount')
+    .eq('user_id', targetUserId)
+    .gte('date', DateFormat('yyyy-MM-dd').format(cycleStart))
+    .lte('date', DateFormat('yyyy-MM-dd').format(cycleEnd))
+    .order('date', ascending: false);
 
     attendanceList = List<Map<String, dynamic>>.from(response);
     todayAttendance = List<Map<String, dynamic>>.from(response);

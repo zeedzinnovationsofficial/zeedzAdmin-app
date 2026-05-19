@@ -44,8 +44,109 @@ class _HomePageState extends State<HomePage> {
   DateTime? startDate;
   DateTime? endDate;
  static bool isFirstLoad = true;
+ 
+ Map<String, int> getCycleChart(PunchProvider punch) {
+  final now = DateTime.now();
+  final joiningDate = DateTime.parse(punch.joiningDate);
+  final schedule = punch.workSchedule;
 
-  @override
+  int present = 0;
+  int pending = 0;
+  int leave = 0;
+  int absent = 0;
+
+  // ✅ SAME CYCLE LOGIC
+  DateTime getCycleStart(DateTime joiningDate, DateTime now) {
+    DateTime start = joiningDate;
+
+    while (true) {
+      final next = DateTime(
+        start.year,
+        start.month,
+        start.day,
+      ).add(const Duration(days: 30));
+
+      if (now.isBefore(next)) break;
+
+      start = next;
+    }
+
+    return start;
+  }
+
+  final cycleStart = getCycleStart(joiningDate, now);
+  final cycleEnd = cycleStart.add(const Duration(days: 29));
+
+  bool isWorkingDay(DateTime d) {
+    if (schedule == "mon_fri") {
+      return d.weekday != DateTime.saturday &&
+          d.weekday != DateTime.sunday;
+    }
+    return d.weekday != DateTime.sunday;
+  }
+
+  for (
+    DateTime date = cycleStart;
+    !date.isAfter(cycleEnd) && !date.isAfter(now);
+    date = date.add(const Duration(days: 1))
+  ) {
+    if (!isWorkingDay(date) || punch.isHoliday(date)) continue;
+
+    final dateKey =
+        "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+    final record = punch.attendanceList.where((item) {
+      return item['date'].toString().substring(0, 10) == dateKey;
+    }).toList();
+
+    final leaveRecord = punch.leaveList.where((leaveItem) {
+      final startLeave = DateTime.parse(leaveItem['start_date']);
+      final endLeave = DateTime.parse(leaveItem['end_date']);
+
+      return !date.isBefore(startLeave) &&
+          !date.isAfter(endLeave);
+    }).toList();
+
+    if (leaveRecord.isNotEmpty) {
+      leave++;
+      continue;
+    }
+
+   if (record.isNotEmpty) {
+  final row = record.first;
+  final status = (row['status'] ?? '').toString().toLowerCase();
+  final hasPunchIn = row['punch_in'] != null;
+
+  if (hasPunchIn) {
+    if (status == 'pending') {
+      pending++;
+    } else if (status == 'approved' || status == 'present') {
+      present++;
+    } else {
+      absent++;
+    }
+  } else {
+    absent++;
+  }
+}else {
+      final today = DateTime(now.year, now.month, now.day);
+
+      if (date.isBefore(today)) {
+        absent++;
+      } else {
+        pending++;
+      }
+    }
+  }
+
+  return {
+    "present": present,
+    "absent": absent,
+    "leave": leave,
+    "pending": pending,
+  };
+}
+ @override
  
 void initState() {
   super.initState();
@@ -122,6 +223,7 @@ Future<void> _loadHomeData(PunchProvider provider) async {
  
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
+  final chart = getCycleChart(punch);
     if (isSummaryLoading && isFirstLoad) {
   return const WorkdayLoader();
 }
@@ -877,13 +979,15 @@ isSummaryLoading
                             //     valueColor: Colors.orange,
                             //   ),
                             // ),
-                          AttendanceRadialChart(
-                            present: punch.presentDays,
-                            absent: punch.getSummary()["absent"] ?? 0,
-                            leave: punch.monthlyLeaveDays,
-                            pending: punch.pendingDays,
-                          ),
-                           
+
+
+AttendanceRadialChart(
+  present: chart["present"] ?? 0,
+  absent: chart["absent"] ?? 0,
+  leave: chart["leave"] ?? 0,
+  pending: chart["pending"] ?? 0,
+)
+
                           ],
                           SizedBox(height: size.height * 0.03),
 

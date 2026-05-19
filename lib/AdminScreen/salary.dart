@@ -125,7 +125,7 @@ bool absentChecked = false;
 
   final response = await supabase
       .from('attendance')
-      .select('earned_amount,date')
+      .select('earned_amount,date,status')
       .eq('user_id', userId)
       .gte(
         'date',
@@ -174,13 +174,17 @@ Future<double> loadCurrentCycleDeductionFromDB() async {
         "${cycleEnd.day.toString().padLeft(2, '0')}",
       );
 
-  double total = 0;
+double total = 0;
 
   for (var row in response) {
-    total += double.tryParse(row['deductions'].toString()) ?? 0;
+    if (row['deductions'] != null) {
+      total += double.tryParse(row['deductions'].toString()) ?? 0;
+    }
   }
 
-  return total;
+print("TOTAL DEDUCTION = $total");
+return total;
+
 }
   Future<void> loadSavedSalary() async {
   final prefs = await SharedPreferences.getInstance();
@@ -430,6 +434,8 @@ Future<void> calculateSalary() async {
 
   final now = DateTime.now();
   final todayDate = getTodayDate(now);
+  final cycleStart = getCycleStart(joiningDate!, now);
+final cycleEnd = cycleStart.add(const Duration(days: 29));
   final userId = supabase.auth.currentUser!.id;
    final role = context.read<PunchProvider>().role;
 final todayLeave = await getTodayLeave();
@@ -574,31 +580,49 @@ if (attendance != null && attendance['punch_in'] != null) {
 }
 
   // ================= CALCULATION =================
-  double netLate = lateHours - extraHours;
+  
+ // ✅ Keep late & extra separate
+double finalLateHours = lateHours;
+double finalExtraHours = extraHours;
 
-  double finalLateHours = netLate > 0 ? netLate : 0;
-  double finalExtraHours = netLate < 0 ? -netLate : 0;
+ double normalWork = workedHours;
 
-  double normalWork = workedHours > 8 ? 8 : workedHours;
+if (normalWork > 8) normalWork = 8;
+if (normalWork < 0) normalWork = 0;
 
-   earnedToday = normalWork * perHour;
-  double lateDeduction = finalLateHours * perHour;
-  double extraEarning = finalExtraHours * perHour;
-double rawDeduction =
-    lateDeduction + leaveDeductionLocal;
+   // ================= CALCULATION =================
 
-double adjustedDeduction = rawDeduction - extraEarning;
+// 1️⃣ Base earnings (late doesn't affect earning)
+// 1️⃣ Base earning (late does NOT reduce base earning)
+earnedToday = normalWork * perHour;
+
+// 2️⃣ Total deduction (late + unpaid leave)
+double totalDeductionToday =
+    (finalLateHours * perHour) + leaveDeductionLocal;
+
+// 3️⃣ Extra hour earning
+double extraEarn = finalExtraHours * perHour;
+
+// 4️⃣ Extra cancels deduction first
+double remainingDeduction =
+    totalDeductionToday - extraEarn;
+
+// 5️⃣ Extra earning only after deduction becomes 0
 double finalExtraEarning = 0;
-
-if (adjustedDeduction < 0) {
-  finalExtraEarning = -adjustedDeduction;
-  adjustedDeduction = 0;
+if (remainingDeduction < 0) {
+  finalExtraEarning = -remainingDeduction;
+  remainingDeduction = 0;
 }
- double finalNet =
-    earnedToday + finalExtraEarning - adjustedDeduction;
 
+// 6️⃣ Final Net
+double finalNet =
+    earnedToday + finalExtraEarning - remainingDeduction;
 
-  if (finalNet < 0) finalNet = 0;
+if (finalNet < 0) finalNet = 0;
+
+// 7️⃣ Store deduction for UI / DB
+totalDeduction = remainingDeduction;
+double lateDeduction = finalLateHours * perHour;
 
   bool isWorkCompleted =
       attendance != null && attendance['punch_out'] != null;
@@ -618,34 +642,35 @@ if (attendance != null &&
 
 
 // ================= REMAINING HOURS FIX =================
-double todayEffectiveHours = 0;
+// ================= REMAINING HOURS FIX =================
+double adjustedWorked = totalWorkedHours;
 
-// 1️⃣ Worked today
-if (attendance != null &&
-    attendance['punch_in'] != null &&
-    attendance['punch_out'] != null) {
-  todayEffectiveHours = workedHours > 8 ? 8 : workedHours;
+final cycleAttendance = await supabase
+    .from('attendance')
+    .select('status,punch_in,punch_out,date')
+    .eq('user_id', userId)
+    .gte(
+      'date',
+      "${cycleStart.year.toString().padLeft(4, '0')}-"
+      "${cycleStart.month.toString().padLeft(2, '0')}-"
+      "${cycleStart.day.toString().padLeft(2, '0')}",
+    )
+    .lte(
+      'date',
+      "${cycleEnd.year.toString().padLeft(4, '0')}-"
+      "${cycleEnd.month.toString().padLeft(2, '0')}-"
+      "${cycleEnd.day.toString().padLeft(2, '0')}",
+    );
+
+for (var row in cycleAttendance) {
+  final status = (row['status'] ?? '').toString().toLowerCase();
+
+  if (status == 'leave' || status == 'absent') {
+    adjustedWorked += 8;
+  }
 }
 
-// 2️⃣ Leave today (paid / unpaid)
-else if (todayLeave != null) {
-  todayEffectiveHours = 8;
-}
-
-// 3️⃣ Absent (no punch + no leave)
-else if (attendance == null ||
-         attendance['punch_in'] == null) {
-  todayEffectiveHours = 8;
-}
-
-// 4️⃣ Sunday
-if (now.weekday == DateTime.sunday) {
-  todayEffectiveHours = 0;
-}
-
-// ✅ FINAL remaining hours
-remainingHours =
-    monthlyTargetHours - (currentTotal + todayEffectiveHours);
+remainingHours = monthlyTargetHours - adjustedWorked;
 
 if (remainingHours < 0) remainingHours = 0;
       
@@ -667,13 +692,13 @@ double previousDeduction =
 // ================= WORK COMPLETED =================
 if (isWorkCompleted) {
 
-  totalDeduction = adjustedDeduction;
+  totalDeduction =remainingDeduction;
 
   await supabase
       .from('attendance')
       .update({
         'earned_amount': finalNet,
-        'deductions':  adjustedDeduction,
+        'deductions':  remainingDeduction
       })
       .eq('id', attendance['id']);
 
@@ -716,7 +741,7 @@ for (var row in cycleResponse) {
 totalDeductionAll =
     (cycleBase - cycleExtra).clamp(0, double.infinity);
 
-  earnedToday = finalNet;
+  earnedToday = earnedToday + finalExtraEarning;
 }
 
 
@@ -758,11 +783,11 @@ else if (attendance == null && todayLeave != null) {
 // ================= LIVE WORKING =================
 else {
 
-  earnedToday = finalNet;
+  
 
 
 
- totalDeduction = adjustedDeduction;
+ totalDeduction = remainingDeduction;
 
  totalDeductionAll = await loadCurrentCycleDeductionFromDB();
 }
@@ -825,40 +850,31 @@ grossSalary = monthlySalary;
   });
 }
 @override
+@override
 void initState() {
   super.initState();
+  loadAllData();
+}
 
-  () async {
-    // 1️⃣ Get joining date FIRST
-    final jd = await getJoiningDate();
+Future<void> loadAllData() async {
+  final jd = await getJoiningDate();
 
-    setState(() {
-      joiningDate = jd;
-    });
+  setState(() {
+    joiningDate = jd;
+  });
 
-    // 2️⃣ Now safe to load monthly data
-    await loadMonthlyData();
+  await loadMonthlyData();
 
-    // 3️⃣ Load totals from DB
-   double totalEarned = await loadCurrentCycleEarnedFromDB();
-double totalDeductionDB = await loadCurrentCycleDeductionFromDB();
-setState(() {
-  totalNet = totalEarned;
-  totalDeductionAll = totalDeductionDB;
-  cycleDeductionLive = totalDeductionDB;
-});
+  totalNet = await loadCurrentCycleEarnedFromDB();
+  totalDeductionAll = await loadCurrentCycleDeductionFromDB();
 
-    // 4️⃣ Calculate today
-   
-await calculateSalary();
-  }();
+  await calculateSalary();
 
-  // 5️⃣ Live update
-  timer = Timer.periodic(const Duration(seconds: 1), (_) {
+  timer = Timer.periodic(const Duration(seconds: 5), (_) {
     calculateSalary();
   });
 }
-  @override
+ @override
   void dispose() {
     timer?.cancel();
     super.dispose();

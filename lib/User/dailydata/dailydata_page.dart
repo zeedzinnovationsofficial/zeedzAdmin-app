@@ -66,12 +66,7 @@ WidgetsBinding.instance.addPostFrameCallback((_) async {
 
     return Scaffold(
        appBar: AppBar(
-    leading: IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () {
-        Navigator.pop(context);
-      },
-    ),
+   
     title: Center(child: Text("Day Details",style:TextStyle(fontSize: 18,fontWeight: .bold) ,)),
     elevation: 0,
     backgroundColor: Colors.transparent,
@@ -99,73 +94,71 @@ WidgetsBinding.instance.addPostFrameCallback((_) async {
                 builder: (context, snapshot) {
                   final isDbHoliday = snapshot.data ?? false;
 
-                  String status = punch.todayStatus ?? 'pending';
+               String status = (punch.todayStatus ?? '').toLowerCase().trim();
 
-if (punch.punchInTime != null && punch.punchOutTime != null) {
-  status = 'approved';
+if (status == "leave") {
+  status = "leave";
+} else if (isDbHoliday) {
+  status = "holiday";
+} else if (status == "approved") {
+  status = "approved";
+} else if (status == "rejected") {
+  status = "rejected";
+} else if (status == "pending") {
+  status = "pending";
+} else {
+  status = "not_punched";
 }
-                  /// ✅ CORRECT PRIORITY
-                  if (status == "leave") {
-                    status = "leave";
-                  } else if (isDbHoliday) {
-                    status = "holiday";
-                  }
 
                   Color bgColor = Colors.grey.shade200;
                   Color textColor = Colors.grey;
                   IconData icon = Icons.info_outline;
                   String statusText = "Not Punched In";
 
-                  switch (status) {
-                   case 'approved':
-  if (punch.punchInTime != null) {
+                 switch (status) {
+  case 'approved':
     bgColor = AppColors.shadowgreen;
     textColor = AppColors.green;
     icon = Icons.check_circle_rounded;
     statusText = "Present";
-  } else {
-    bgColor = Colors.grey.shade200;
-    textColor = Colors.grey;
-    icon = Icons.info_outline;
-    statusText = "Not Punched In";
-  }
-  break;
-
-                    case 'rejected':
-                      bgColor = AppColors.shadowred;
-                      textColor = AppColors.red;
-                      icon = Icons.cancel_rounded;
-                      statusText = "Absent";
-                      break;
-
-                    case 'leave':
-                      bgColor = AppColors.shadowroyalblue;
-                      textColor = AppColors.royalblue;
-                      icon = Icons.event_available;
-                      statusText = "On Leave";
-                      break;
-
-                    case 'holiday':
-                      bgColor = Colors.blue.shade100;
-                      textColor = Colors.blue;
-                      icon = Icons.celebration;
-                      statusText = "Holiday";
-                      break;
-
-                   
-                      default:
-  if (punch.punchInTime != null) {
+    break;
+ case 'pending':
     bgColor = Colors.orange.shade100;
     textColor = Colors.orange;
     icon = Icons.hourglass_empty;
     statusText = "Pending";
-  } else {
-    bgColor = Colors.grey.shade200;
-    textColor = Colors.grey;
-    icon = Icons.info_outline;
-    statusText = "Not Punched In";
-  }}
-                  return Center(
+    break;
+  case 'rejected':
+    bgColor = AppColors.shadowred;
+    textColor = AppColors.red;
+    icon = Icons.cancel_rounded;
+    statusText = "Absent";
+    break;
+
+  case 'leave':
+    bgColor = AppColors.shadowroyalblue;
+    textColor = AppColors.royalblue;
+    icon = Icons.event_available;
+    statusText = "On Leave";
+    break;
+
+  case 'holiday':
+    bgColor = Colors.blue.shade100;
+    textColor = Colors.blue;
+    icon = Icons.celebration;
+    statusText = "Holiday";
+    break;
+    case 'not_punched':
+  bgColor = Colors.grey.shade200;
+  textColor = Colors.grey;
+  icon = Icons.info_outline;
+  statusText = "Not Punched In";
+  break;
+
+ 
+    
+}
+return Center(
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       height: size.height * 0.06,
