@@ -25,17 +25,14 @@ class _DailydataPageState extends State<DailydataPage> {
 Future<List<Map<String, dynamic>>>? leavesFuture;
 Future<bool>? holidayFuture;
   @override
-  void initState() {
-    super.initState();
-   final provider = context.read<PunchProvider>();
+void initState() {
+  super.initState();
 
-WidgetsBinding.instance.addPostFrameCallback((_) async {
-  await provider.initializeApp();   // important
-  setState(() {
-    leavesFuture = provider.fetchMyLeaves();
-    holidayFuture = checkIsHoliday();
-  });
-});}
+  final provider = context.read<PunchProvider>();
+
+  leavesFuture = provider.fetchMyLeaves();
+  holidayFuture = checkIsHoliday();
+}
 
   /// 🔥 CHECK HOLIDAY FROM DB
   Future<bool> checkIsHoliday() async {

@@ -482,45 +482,45 @@ Future<void> punchOut(BuildContext context) async {
       .eq('date', today)
       .maybeSingle();
 
-  if (data != null) {
+ if (data != null) {
   todayStatus = data['status'];
 
   if (data['punch_in'] != null) {
-    punchInTime = DateTime.parse(data['punch_in']);
+    punchInTime = DateTime.parse(data['punch_in']).toLocal();
   }
 
   if (data['punch_out'] != null) {
-    punchOutTime = DateTime.parse(data['punch_out']);
+    punchOutTime = DateTime.parse(data['punch_out']).toLocal();
   }
 
   locationAddress = data['location'] ?? "--";
 
-  if (todayStatus == 'rejected') {
-    punchStatus = "absent";
-    statusText = "Absent";
-
-  } 
- if (punchInTime != null && punchOutTime == null) {
-  punchStatus = "out";          // 🔥 punch-out visible
-  statusText = "Working";
-  isRunning = true;             // 🔥 timer run
-}
-else if (punchInTime != null && punchOutTime != null) {
-  punchStatus = "done";
-  statusText = "Completed";
-  isRunning = false;
-}
-
-  else if (todayStatus == 'leave') {
+  // ✅ Correct order
+  if (todayStatus == 'leave') {
     punchStatus = "leave";
     statusText = "On Leave";
-
+    isRunning = false;
+  } 
+  else if (todayStatus == 'rejected') {
+    punchStatus = "absent";
+    statusText = "Absent";
+    isRunning = false;
+  }
+  else if (punchInTime != null && punchOutTime == null) {
+    punchStatus = "out";
+    statusText = "Working";
+    isRunning = true;
+  } 
+  else if (punchInTime != null && punchOutTime != null) {
+    punchStatus = "done";
+    statusText = "Completed";
+    isRunning = false;
   } 
   else {
-  punchStatus = "in";
-  statusText = "Punch In";
-  isRunning = false;
-}
+    punchStatus = "in";
+    statusText = "Punch In";
+    isRunning = false;
+  }
 }
   else {
   todayStatus = "";

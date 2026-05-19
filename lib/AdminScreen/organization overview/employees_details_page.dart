@@ -126,12 +126,20 @@ for (var row in employeeAttendance) {
       ) ??
       0;
 }
-double monthlySalary =
-    role == 'intern'
-        ? 3000
-        : role == 'hr'
-        ? 5000
-        : 4000;
+double getSalaryByRole(String role) {
+  switch (role) {
+    case 'intern':
+      return 3000;
+    case 'hr':
+      return 5000;
+    case 'admin':
+      return 8000;
+    case 'super_admin':
+      return 10000;
+    default:
+      return 4000;
+  }
+}
 
                 return InkWell(
   borderRadius: BorderRadius.circular(24),

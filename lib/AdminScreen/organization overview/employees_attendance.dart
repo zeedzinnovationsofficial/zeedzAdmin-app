@@ -85,9 +85,13 @@ class _EmployeesAttendanceState extends State<EmployeesAttendance> {
     /// start counting from join date
     final start = joiningDate.isAfter(monthStart) ? joiningDate : monthStart;
 
-    final end = selectedMonth == now.month
-        ? DateTime(year, selectedMonth, now.day - 1)
-        : DateTime(year, selectedMonth + 1, 0);
+  final cutoff = DateTime(now.year, now.month, now.day, 11, 0);
+
+final end = selectedMonth == now.month
+    ? (now.isAfter(cutoff)
+        ? DateTime(year, selectedMonth, now.day)   // ✅ include today
+        : DateTime(year, selectedMonth, now.day - 1))
+    : DateTime(year, selectedMonth + 1, 0);
 
     int workingDays = 0;
 

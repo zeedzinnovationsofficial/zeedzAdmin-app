@@ -47,6 +47,7 @@ bool absentChecked = false;
 
   bool animateSalary = false;
   bool isLoading = true;
+  bool isRefreshing = false;
 
   Timer? timer;
    // 👇 PASTE HERE
@@ -850,19 +851,24 @@ grossSalary = monthlySalary;
   });
 }
 @override
-@override
 void initState() {
   super.initState();
   loadAllData();
+
+  timer = Timer.periodic(
+    const Duration(seconds: 5),
+    (_) => calculateSalary(),
+  );
 }
 
-Future<void> loadAllData() async {
-  final jd = await getJoiningDate();
+Future<void> loadAllData({bool refresh = false}) async {
+  if (refresh) {
+    setState(() => isRefreshing = true);
+  } else {
+    setState(() => isLoading = true);
+  }
 
-  setState(() {
-    joiningDate = jd;
-  });
-
+  joiningDate = await getJoiningDate();
   await loadMonthlyData();
 
   totalNet = await loadCurrentCycleEarnedFromDB();
@@ -870,8 +876,9 @@ Future<void> loadAllData() async {
 
   await calculateSalary();
 
-  timer = Timer.periodic(const Duration(seconds: 5), (_) {
-    calculateSalary();
+  setState(() {
+    isLoading = false;
+    isRefreshing = false;
   });
 }
  @override
@@ -887,80 +894,83 @@ Future<void> loadAllData() async {
       backgroundColor: const Color(0xffF5F7FB),
       body: isLoading
           ? const SalarySkeleton()
-          : Padding(
-              padding:
-                  const EdgeInsets.only(top: 60, bottom: 90),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xff1FA2FF),
-                            Color(0xff12D8FA)
-                          ],
-                        ),
-                        borderRadius:
-                            BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                        children: [
-                          const Text("Net Salary",
-                              style: TextStyle(
-                                  color: Colors.white70)),
-                          SizedBox(
-                              height: size.height * 0.02),
-                          Text(
-                            "₹ ${totalNet.toStringAsFixed(0)}",
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight:
-                                    FontWeight.bold),
-                          ),
-                          SizedBox(
-                              height: size.height * 0.02),
-                          Text(
-                            "Gross: $gross | Deduction: ₹${totalDeductionAll.toStringAsFixed(2)}",
-                            style: const TextStyle(
-                                color: Colors.white70),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: size.height * 0.02),
-                    Row(
-                      children: [
-                        SmallCard(
-                          title: "Earnings",
-                          value: "+₹${earnedToday.toStringAsFixed(2)}",
-                          isGreen: true,
-                        ),
-                        SmallCard(
-                          title: "Deduction",
-                          value:
-                              "-₹${totalDeduction.toStringAsFixed(2)}",
-                          isRed: true,
-                        ),
+           : RefreshIndicator(
+            onRefresh: () async {
+              await loadAllData();
+            },
+            child :SingleChildScrollView(  physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Container(
+                 width: double.infinity,
+  margin: const EdgeInsets.only(top: 60), 
+  
+                  padding: const EdgeInsets.all(16,),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xff1FA2FF),
+                        Color(0xff12D8FA)
                       ],
                     ),
-                    SizedBox(height: size.height * 0.02),
-                    SectionCard(
-                      title: "6-Month Trend",
-                      child:  SalaryBarChart(monthlyData: monthlyData, chartMonths:chartMonths),
+                    borderRadius:
+                        BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      const Text("Net Salary",
+                          style: TextStyle(
+                              color: Colors.white70)),
+                      SizedBox(
+                          height: size.height * 0.02),
+                      Text(
+                        "₹ ${totalNet.toStringAsFixed(0)}",
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight:
+                                FontWeight.bold),
+                      ),
+                      SizedBox(
+                          height: size.height * 0.02),
+                      Text(
+                        "Gross: $gross | Deduction: ₹${totalDeductionAll.toStringAsFixed(2)}",
+                        style: const TextStyle(
+                            color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: size.height * 0.02),
+                Row(
+                  children: [
+                    SmallCard(
+                      title: "Earnings",
+                      value: "+₹${earnedToday.toStringAsFixed(2)}",
+                      isGreen: true,
                     ),
-                    SizedBox(height: size.height * 0.02),
-                    RecentRecords(records: recentList),
+                    SmallCard(
+                      title: "Deduction",
+                      value:
+                          "-₹${totalDeduction.toStringAsFixed(2)}",
+                      isRed: true,
+                    ),
                   ],
                 ),
-              ),
+                SizedBox(height: size.height * 0.02),
+                SectionCard(
+                  title: "6-Month Trend",
+                  child:  SalaryBarChart(monthlyData: monthlyData, chartMonths:chartMonths),
+                ),
+                SizedBox(height: size.height * 0.02),
+                RecentRecords(records: recentList),
+                  SizedBox(height: size.height * 0.1)
+              ],
             ),
+          ),)
     );
   }
 } 
