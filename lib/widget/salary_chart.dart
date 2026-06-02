@@ -45,77 +45,140 @@ class SalaryBarChart extends StatelessWidget {
     return SizedBox(
       height: size.height * 0.19,
       child: Padding(
-        padding: const EdgeInsets.only(left: 30),
+       padding: const EdgeInsets.symmetric(horizontal: 10),
         child: BarChart(
-          BarChartData(
-            maxY: _getMaxY(data),
-            alignment: BarChartAlignment.start,
-            borderData: FlBorderData(show: false),
-            gridData: FlGridData(show: false),
-        
-            titlesData: FlTitlesData(
-              leftTitles: AxisTitles(
-                  sideTitles: SideTitles(showTitles: false)),
-              rightTitles: AxisTitles(
-                  sideTitles: SideTitles(showTitles: false)),
-              topTitles: AxisTitles(
-                  sideTitles: SideTitles(showTitles: false)),
-        
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  getTitlesWidget: (value, meta) {
-                    final index = value.toInt();
-        
-                    if (index < 0 || index >= monthLabels.length) {
-                      return const SizedBox();
-                    }
-        
-                    final isCurrent = months[index] == currentMonth;
-        
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        monthLabels[index],
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isCurrent
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: isCurrent
-                              ? Colors.black
-                              : Colors.grey,
-                        ),
-                      ),
-                    );
-                  },
+  BarChartData(
+    maxY: _getMaxY(data),
+
+    barTouchData: BarTouchData(
+      enabled: true,
+      touchTooltipData: BarTouchTooltipData(
+        tooltipRoundedRadius: 8,
+        getTooltipItem:
+            (group, groupIndex, rod, rodIndex) {
+
+          final item = data[group.x.toInt()];
+
+          final netSalary =
+    item['earnings'] ?? 0;
+
+          final deduction =
+              item['deduction'] ?? 0;
+
+          return BarTooltipItem(
+          "Net Salary : ₹${netSalary.toStringAsFixed(0)}\n"
+"Deduction : ₹${deduction.toStringAsFixed(0)}",
+            const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          );
+        },
+      ),
+    ),
+
+    alignment: BarChartAlignment.spaceAround,
+
+    borderData: FlBorderData(show: false),
+
+    gridData: FlGridData(
+      show: true,
+      drawVerticalLine: false,
+      horizontalInterval: 500,
+    ),
+
+    titlesData: FlTitlesData(
+      leftTitles: AxisTitles(
+        sideTitles: SideTitles(showTitles: false),
+      ),
+      rightTitles: AxisTitles(
+        sideTitles: SideTitles(showTitles: false),
+      ),
+      topTitles: AxisTitles(
+        sideTitles: SideTitles(showTitles: false),
+      ),
+
+      bottomTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          getTitlesWidget: (value, meta) {
+            final index = value.toInt();
+
+            if (index < 0 ||
+                index >= monthLabels.length) {
+              return const SizedBox();
+            }
+
+            final isCurrent =
+                months[index] == currentMonth;
+
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                monthLabels[index],
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isCurrent
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                  color: isCurrent
+                      ? Colors.black
+                      : Colors.grey,
                 ),
               ),
-            ),
-        
-            // ---------------- BAR DATA ----------------
-            barGroups: List.generate(months.length, (index) {
-              final item = data[index];
-        
-             double earnings = item['earnings'] ?? 0;
-double deduction = item['deduction'] ?? 0;
-
-// 🔥 FIX: avoid zero height bars
-if (earnings == 0) earnings = 0.5;
-if (deduction == 0) deduction = 0.5;
-        
-              final isCurrent = months[index] == currentMonth;
-        
-              return _makeGroup(
-                index,
-                earnings,
-                deduction,
-                isCurrent,
-              );
-            }),
-          ),
+            );
+          },
         ),
       ),
+    ),
+
+    barGroups: List.generate(months.length, (index) {
+
+      final item = data[index];
+
+     final earnings =
+    item['earnings'] ?? 0;
+
+      final deduction =
+          item['deduction'] ?? 0;
+
+      final isCurrent =
+          months[index] == currentMonth;
+
+      return BarChartGroupData(
+        x: index,
+
+        barsSpace: 4,
+
+        barRods: [
+
+          // Earnings Bar
+          BarChartRodData(
+            toY: earnings == 0 ? 1 : earnings,
+            width: 10,
+            color: isCurrent
+                ? Colors.blueAccent
+                : Colors.teal,
+            borderRadius:
+                BorderRadius.circular(6),
+          ),
+
+          // Deduction Bar
+          BarChartRodData(
+            toY: deduction == 0 ? 1 : deduction,
+            width: 10,
+            color: isCurrent
+                ? Colors.redAccent
+                : Colors.red,
+            borderRadius:
+                BorderRadius.circular(6),
+          ),
+        ],
+      );
+    }),
+  ),
+) ),
     );
   }
 

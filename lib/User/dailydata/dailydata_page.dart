@@ -85,28 +85,54 @@ void initState() {
             children: [
               SizedBox(height: size.height * 0.01),
 
+
               /// 🔥 STATUS CARD (FIXED LOGIC)
               FutureBuilder<bool>(
                 future: checkIsHoliday(),
                 builder: (context, snapshot) {
                   final isDbHoliday = snapshot.data ?? false;
+                  final now = DateTime.now();
 
-               String status = (punch.todayStatus ?? '').toLowerCase().trim();
+final cutoff = DateTime(
+  now.year,
+  now.month,
+  now.day,
+  11,
+  0,
+);
 
-if (status == "leave") {
+final isAfter11 =
+    now.isAfter(cutoff) || now.isAtSameMomentAs(cutoff);
+
+final hasPunchedIn =
+    punch.inTime.isNotEmpty && punch.inTime != "--:--";
+
+           String status;
+
+final rawStatus = (punch.todayStatus ?? '').toLowerCase().trim();
+
+if (rawStatus == "leave") {
   status = "leave";
-} else if (isDbHoliday) {
+}
+else if (isDbHoliday) {
   status = "holiday";
-} else if (status == "approved") {
+}
+/// 🔥 ABSENT MUST COME BEFORE APPROVED
+else if (isAfter11 && !hasPunchedIn) {
+  status = "absent";
+}
+else if (rawStatus == "approved") {
   status = "approved";
-} else if (status == "rejected") {
-  status = "rejected";
-} else if (status == "pending") {
+}
+else if (rawStatus == "pending") {
   status = "pending";
-} else {
+}
+else if (rawStatus == "rejected") {
+  status = "rejected";
+}
+else {
   status = "not_punched";
 }
-
                   Color bgColor = Colors.grey.shade200;
                   Color textColor = Colors.grey;
                   IconData icon = Icons.info_outline;
@@ -150,6 +176,12 @@ if (status == "leave") {
   textColor = Colors.grey;
   icon = Icons.info_outline;
   statusText = "Not Punched In";
+  break;
+  case 'absent':
+  bgColor = AppColors.shadowred;
+  textColor = AppColors.red;
+  icon = Icons.cancel_rounded;
+  statusText = "Absent";
   break;
 
  
@@ -203,9 +235,9 @@ return Center(
                   iconColor: AppColors.green,
                   title: "Punch In",
                   time: punch.inTime.isEmpty ? "--:--" : punch.inTime,
-                  location: punch.locationAddress.isEmpty
-                      ? "--"
-                      : punch.locationAddress,
+                  location: punch.punchInLocation.isEmpty
+    ? "--"
+    : punch.punchInLocation,
                 ),
                 rightCard: PunchDetailcardWidget(
                   icon: Icons.logout,
@@ -213,9 +245,9 @@ return Center(
                   iconColor: AppColors.red,
                   title: "Punch Out",
                   time: punch.outTime.isEmpty ? "--:--" : punch.outTime,
-                  location: punch.locationAddress.isEmpty
-                      ? "--"
-                      : punch.locationAddress,
+                 location: punch.punchOutLocation.isEmpty
+    ? "--"
+    : punch.punchOutLocation,
                 ),
               ),
 
@@ -279,7 +311,7 @@ return Center(
 
                       return Center(
                         child: Container(
-                          height: size.height * 0.15,
+                          constraints: const BoxConstraints(minHeight: 110),
                           width: size.width * 0.9,
                           margin: const EdgeInsets.symmetric(
                               horizontal: 15, vertical: 6),
@@ -295,11 +327,51 @@ return Center(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "Reason: ${leave['reason'] ?? '--'}",
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
-                              ),
+                              LayoutBuilder(
+  builder: (context, constraints) {
+    final reason = leave['reason'] ?? '--';
+    final isLong = reason.toString().length > 45;
+
+    return StatefulBuilder(
+      builder: (context, setInnerState) {
+        bool expanded = false;
+
+        return StatefulBuilder(
+          builder: (context, setStateSB) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Reason: $reason",
+                  maxLines: expanded ? null : 2,
+                  overflow:
+                      expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (isLong)
+                  GestureDetector(
+                    onTap: () {
+                      setStateSB(() {
+                        expanded = !expanded;
+                      });
+                    },
+                    child: Text(
+                      expanded ? "See less" : "See more",
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  },
+),
                               const SizedBox(height: 5),
                               Text(
                                   "From: ${leave['start_date']}  To: ${leave['end_date']}"),

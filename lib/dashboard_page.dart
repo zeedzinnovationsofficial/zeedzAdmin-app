@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:zeedz_attendance/AdminScreen/approval.dart';
 import 'package:zeedz_attendance/AdminScreen/Leaveapproval/leave_approval_page.dart';
 import 'package:zeedz_attendance/AdminScreen/employee_list_page.dart';
-import 'package:zeedz_attendance/AdminScreen/salary.dart';
+import 'package:zeedz_attendance/User/salary/salary.dart';
 import 'package:zeedz_attendance/User/attendance/attendance_page.dart';
 import 'package:zeedz_attendance/User/dailydata/dailydata_page.dart';
 import 'package:zeedz_attendance/User/home/home_page.dart';

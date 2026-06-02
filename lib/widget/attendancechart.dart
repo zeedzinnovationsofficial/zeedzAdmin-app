@@ -43,18 +43,10 @@ class AttendanceRadialChart extends StatelessWidget {
           const SizedBox(height: 20),
 
          Expanded(
-  child: AnimatedSwitcher(
-    duration: const Duration(milliseconds: 800),
-    transitionBuilder: (child, animation) {
-      return ScaleTransition(
-        scale: animation,
-        child: child,
-      );
-    },
-
+  child: RepaintBoundary(
     child: PieChart(
-      key: ValueKey("$present-$absent-$leave-$pending"), // 🔥 important
-
+         key: const ValueKey("attendance_chart"),
+        
       PieChartData(
         centerSpaceRadius: 45,
         sectionsSpace: 4,

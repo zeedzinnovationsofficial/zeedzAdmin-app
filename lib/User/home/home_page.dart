@@ -1,18 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/AdminScreen/approval.dart';
-
+import 'package:zeedz_attendance/helper/punch_handler.dart';
 import 'package:zeedz_attendance/AdminScreen/organization%20overview/absent_employees_page.dart';
 import 'package:zeedz_attendance/AdminScreen/organization%20overview/employees_details_page.dart';
-
 import 'package:zeedz_attendance/AdminScreen/organization%20overview/leave_employees_page.dart';
-
 import 'package:zeedz_attendance/User/home/notification_page.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/User/home/widget/chat_bot.dart';
@@ -22,9 +17,12 @@ import 'package:zeedz_attendance/User/home/widget/loader.dart';
 import 'package:zeedz_attendance/User/home/widget/punch_status_widget.dart';
 import 'package:zeedz_attendance/User/home/widget/punching_widget.dart';
 import 'package:zeedz_attendance/User/profile/profile_page.dart';
+import 'package:zeedz_attendance/helper/home_chart_helper.dart';
+
+
 import 'package:zeedz_attendance/provider/provider.dart';
-import 'package:zeedz_attendance/widget/attendance_summary_section.dart';
 import 'package:zeedz_attendance/widget/attendancechart.dart';
+import 'package:zeedz_attendance/widget/attendancechartskeleton.dart';
 import 'package:zeedz_attendance/widget/summaryrowskeleton.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
@@ -37,115 +35,20 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> 
+    with AutomaticKeepAliveClientMixin {
+      @override
+bool get wantKeepAlive => true;
   bool isLoading = false;
+  Map<String, int> chartData = {};
   bool isSummaryLoading = true;
+  bool isChartLoading = true;
   DateTime selectedMonth = DateTime.now();
   DateTime? startDate;
   DateTime? endDate;
  static bool isFirstLoad = true;
  
- Map<String, int> getCycleChart(PunchProvider punch) {
-  final now = DateTime.now();
-  final joiningDate = DateTime.parse(punch.joiningDate);
-  final schedule = punch.workSchedule;
-
-  int present = 0;
-  int pending = 0;
-  int leave = 0;
-  int absent = 0;
-
-  // ✅ SAME CYCLE LOGIC
-  DateTime getCycleStart(DateTime joiningDate, DateTime now) {
-    DateTime start = joiningDate;
-
-    while (true) {
-      final next = DateTime(
-        start.year,
-        start.month,
-        start.day,
-      ).add(const Duration(days: 30));
-
-      if (now.isBefore(next)) break;
-
-      start = next;
-    }
-
-    return start;
-  }
-
-  final cycleStart = getCycleStart(joiningDate, now);
-  final cycleEnd = cycleStart.add(const Duration(days: 29));
-
-  bool isWorkingDay(DateTime d) {
-    if (schedule == "mon_fri") {
-      return d.weekday != DateTime.saturday &&
-          d.weekday != DateTime.sunday;
-    }
-    return d.weekday != DateTime.sunday;
-  }
-
-  for (
-    DateTime date = cycleStart;
-    !date.isAfter(cycleEnd) && !date.isAfter(now);
-    date = date.add(const Duration(days: 1))
-  ) {
-    if (!isWorkingDay(date) || punch.isHoliday(date)) continue;
-
-    final dateKey =
-        "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-
-    final record = punch.attendanceList.where((item) {
-      return item['date'].toString().substring(0, 10) == dateKey;
-    }).toList();
-
-    final leaveRecord = punch.leaveList.where((leaveItem) {
-      final startLeave = DateTime.parse(leaveItem['start_date']);
-      final endLeave = DateTime.parse(leaveItem['end_date']);
-
-      return !date.isBefore(startLeave) &&
-          !date.isAfter(endLeave);
-    }).toList();
-
-    if (leaveRecord.isNotEmpty) {
-      leave++;
-      continue;
-    }
-
-   if (record.isNotEmpty) {
-  final row = record.first;
-  final status = (row['status'] ?? '').toString().toLowerCase();
-  final hasPunchIn = row['punch_in'] != null;
-
-  if (hasPunchIn) {
-    if (status == 'pending') {
-      pending++;
-    } else if (status == 'approved' || status == 'present') {
-      present++;
-    } else {
-      absent++;
-    }
-  } else {
-    absent++;
-  }
-}else {
-      final today = DateTime(now.year, now.month, now.day);
-
-      if (date.isBefore(today)) {
-        absent++;
-      } else {
-        pending++;
-      }
-    }
-  }
-
-  return {
-    "present": present,
-    "absent": absent,
-    "leave": leave,
-    "pending": pending,
-  };
-}
+ 
  @override
  
 void initState() {
@@ -165,10 +68,10 @@ void initState() {
         holidays = List<Map<String, dynamic>>.from(response);
       });
     }
-
+  await _loadHomeData(provider);
     // ✅ Load data ONLY FIRST TIME
     if (isFirstLoad) {
-      await _loadHomeData(provider);
+    
     }
   });
 
@@ -187,7 +90,8 @@ Future<void> _loadHomeData(PunchProvider provider) async {
  if (isFirstLoad) {
   setState(() {
     isSummaryLoading = true;
-     isFirstLoad = false;
+     isChartLoading = true;
+    
   });
 }
 
@@ -203,10 +107,14 @@ Future<void> _loadHomeData(PunchProvider provider) async {
     await provider.loadAllPendingCount();
   }
 
+ chartData = HomeChartHelper.getCycleChart(provider);
+
+print("Chart data testing 1");
   if (!mounted) return;
 
   setState(() {
     isSummaryLoading = false;
+     isChartLoading = false; 
      isFirstLoad = false;
   });
 }bool isHolidayToday(List holidays) {
@@ -218,12 +126,14 @@ Future<void> _loadHomeData(PunchProvider provider) async {
       h['holiday_date'].toString().split("T")[0] == todayStr);
 }
 
+
   @override
   Widget build(BuildContext context) {
- 
+  super.build(context);
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
-  final chart = getCycleChart(punch);
+    
+ 
     if (isSummaryLoading && isFirstLoad) {
   return const WorkdayLoader();
 }
@@ -232,18 +142,21 @@ Future<void> _loadHomeData(PunchProvider provider) async {
 
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () async {
-          final provider = context.read<PunchProvider>();
+       onRefresh: () async {
+  final provider = context.read<PunchProvider>();
 
-          await provider.loadTodayPunch(); // ✅ only needed
+  await provider.initializeApp();
 
-          if (provider.role == 'admin' ||
-              provider.role == 'hr' ||
-              provider.role == 'superadmin') {
-            await provider.loadSuperAdminStats();
-            setState(() {});
-          } // force UI rebuild
-        },
+  chartData = HomeChartHelper.getCycleChart(provider);
+
+  if (provider.role == 'admin' ||
+      provider.role == 'hr' ||
+      provider.role == 'superadmin') {
+    await provider.loadSuperAdminStats();
+  }
+
+  setState(() {});
+},
         child: Stack(
           children: [
             isLoading
@@ -980,13 +893,15 @@ isSummaryLoading
                             //   ),
                             // ),
 
-
-AttendanceRadialChart(
-  present: chart["present"] ?? 0,
-  absent: chart["absent"] ?? 0,
-  leave: chart["leave"] ?? 0,
-  pending: chart["pending"] ?? 0,
-)
+isChartLoading
+    ? const AttendanceChartSkeleton()
+    : AttendanceRadialChart(
+        key: ValueKey(chartData.toString()),
+        present: chartData["present"] ?? 0,
+        absent: chartData["absent"] ?? 0,
+        leave: chartData["leave"] ?? 0,
+        pending: chartData["pending"] ?? 0,
+      ),
 
                           ],
                           SizedBox(height: size.height * 0.03),
@@ -1006,10 +921,10 @@ AttendanceRadialChart(
 print("STATUS CLICKED: $status");
 
 if (status == "approved" || status == "in") {
-  await _handlePunchIn(context);
+await PunchHandler.punchIn(context);
 } 
 else if (status == "out") {
-  await _handlePunchOut(context);
+ await PunchHandler.punchOut(context);
 }
 }
     ),
@@ -1026,229 +941,5 @@ else if (status == "out") {
     );
   }
 
-  Future<void> _handlePunchIn(BuildContext context) async {
-    // if (isLoading) return;
-
-    setState(() {
-      isLoading = true;
-    });
-    final picker = ImagePicker();
-
-    final XFile? photo = await picker.pickImage(source: ImageSource.camera);
-
-  if (photo == null) {
-  setState(() => isLoading = false);
-  return;
-}
-
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-
-      if (!serviceEnabled) {
-        if (!mounted) return;
-
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text("Location Disabled"),
-            content: const Text("Please turn on your location to punch in."),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await Geolocator.openLocationSettings();
-                },
-                child: const Text("Turn On"),
-              ),
-            ],
-          ),
-        );
-
-        return;
-      }
-
-      LocationPermission permission = await Geolocator.checkPermission();
-
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        if (!mounted) return;
-
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text("Permission Required"),
-            content: const Text(
-              "Location permission is permanently denied. Please enable it from settings.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await Geolocator.openAppSettings();
-                },
-                child: const Text("Open Settings"),
-              ),
-            ],
-          ),
-        );
-
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition();
-
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-
-      Placemark place = placemarks.first;
-
-      String address =
-          "${place.locality}, ${place.administrativeArea}, ${place.country}";
-
-      await context.read<PunchProvider>().punchIn(address, context);
-      await context.read<PunchProvider>().loadTodayPunch();
-
-      // await context.read<PunchProvider>().loadAttendance();
-
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      print("Location Error: $e");
-    } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false; //  STOP LOADER
-        });
-      }
-    }
-  }
-  
-Future<void> _handlePunchOut(BuildContext context) async {
-  print("👉 Punch Out button pressed");
-  setState(() {
-    isLoading = true;
-  });
-
-  final picker = ImagePicker();
-
-  // 📸 OPEN CAMERA (NO SAVE)
-  final XFile? photo = await picker.pickImage(source: ImageSource.camera);
-
-  if (photo == null) {
-    setState(() => isLoading = false);
-    return;
-  }
-
-  try {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-
-    if (!serviceEnabled) {
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Location Disabled"),
-          content: const Text("Please turn on your location to punch out."),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await Geolocator.openLocationSettings();
-              },
-              child: const Text("Turn On"),
-            ),
-          ],
-        ),
-      );
-
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Permission Required"),
-          content: const Text(
-            "Location permission is permanently denied. Enable from settings.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await Geolocator.openAppSettings();
-              },
-              child: const Text("Open Settings"),
-            ),
-          ],
-        ),
-      );
-
-      return;
-    }
-
-    // 📍 GET LOCATION (optional)
-    final position = await Geolocator.getCurrentPosition();
-
-    List<Placemark> placemarks = await placemarkFromCoordinates(
-      position.latitude,
-      position.longitude,
-    );
-
-    Placemark place = placemarks.first;
-
-    String address =
-        "${place.locality}, ${place.administrativeArea}, ${place.country}";
-
-    // 🔥 ONLY CALL punchOut (NO IMAGE UPLOAD)
-   try {
-  await context.read<PunchProvider>().punchOut(context);
-  print("✅ Punch out success");
-} catch (e) {
-  print("❌ Punch out error: $e");
-}
-
-    await context.read<PunchProvider>().loadTodayPunch();
-
-  } catch (e) {
-    print("PunchOut Error: $e");
-  } finally {
-    if (mounted) {
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-}
+ 
 }

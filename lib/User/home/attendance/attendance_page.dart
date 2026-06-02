@@ -100,7 +100,9 @@ class _AttendancePageState extends State<AttendancePage> {
   int absent = 0;
 
   final year = now.year;
+
   final monthStart = DateTime(year, selectedMonth, 1);
+
   final monthEnd = (selectedMonth == now.month)
       ? DateTime(now.year, now.month, now.day)
       : DateTime(year, selectedMonth + 1, 0);
@@ -110,8 +112,17 @@ class _AttendancePageState extends State<AttendancePage> {
     !d.isAfter(monthEnd);
     d = d.add(const Duration(days: 1))
   ) {
+
+    /// 🚫 FUTURE DATE SKIP
+    if (d.isAfter(now)) continue;
+
+    /// 🚫 BEFORE JOINING
     if (d.isBefore(joiningDate)) continue;
+
+    /// 🚫 WEEK OFF
     if (!isWorkingDay(d, schedule)) continue;
+
+    /// 🚫 HOLIDAY
     if (provider.isHoliday(d)) continue;
 
     final dateKey = DateFormat('yyyy-MM-dd').format(d);
@@ -124,35 +135,72 @@ class _AttendancePageState extends State<AttendancePage> {
     final leaveRecord = leaveList.where((l) {
       final start = DateTime.parse(l['start_date']);
       final end = DateTime.parse(l['end_date']);
+
       return !d.isBefore(start) && !d.isAfter(end);
     }).toList();
 
+    /// ✅ LEAVE
     if (leaveRecord.isNotEmpty) {
       leave++;
       continue;
     }
 
+    /// ✅ ATTENDANCE EXISTS
     if (record.isNotEmpty) {
       final row = record.first;
-      final status = (row['status'] ?? '').toString().toLowerCase();
 
-      if (status == 'approved' || status == 'present') {
+      final status =
+          (row['status'] ?? '').toString().toLowerCase();
+
+      final hasPunchIn = row['punch_in'] != null;
+
+      /// ✅ PRESENT
+      if ((status == 'approved' || status == 'present') &&
+          hasPunchIn) {
         present++;
-      } else if (status == 'pending') {
+      }
+
+      /// ✅ PENDING
+      else if (status == 'pending' && hasPunchIn) {
         pending++;
-      } else if (status == 'leave') {
-        leave++;
-      } else {
+      }
+
+      /// ✅ REJECTED / ABSENT
+      else {
         absent++;
       }
-    } else {
-      absent++;
     }
 
-    print("DATE $dateKey => absent=$absent");
+    /// ✅ NO RECORD
+    else {
+      final todayKey =
+          DateFormat('yyyy-MM-dd').format(now);
+
+      final isToday = dateKey == todayKey;
+
+      /// today before cutoff → don't absent
+      if (isToday) {
+        final cutoff = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          10,
+          30,
+        );
+
+        if (now.isBefore(cutoff)) {
+          continue;
+        }
+      }
+
+      absent++;
+    }
   }
 
-  print("FINAL ABSENT = $absent");
+  print("PRESENT: $present");
+  print("ABSENT: $absent");
+  print("LEAVE: $leave");
+  print("PENDING: $pending");
 
   return {
     "present": present,
@@ -160,8 +208,7 @@ class _AttendancePageState extends State<AttendancePage> {
     "leave": leave,
     "absent": absent,
   };
-}
-  // ---------------- UI ----------------
+} // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;

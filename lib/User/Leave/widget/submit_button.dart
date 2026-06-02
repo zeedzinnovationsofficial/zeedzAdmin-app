@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
-
+import 'package:zeedz_attendance/service/onesignal_service.dart';
 class SubmitButton extends StatelessWidget {
   const SubmitButton({super.key});
 
@@ -62,13 +62,31 @@ class SubmitButton extends StatelessWidget {
 
             try {
               await supabase.from('leave_requests').insert({
-                'user_id': user.id,
-                'start_date': provider.startDate?.toIso8601String(),
-                'end_date': provider.endDate?.toIso8601String(),
-                'reason': provider.reason,
-                'status': 'pending',
-              });
+  'user_id': user.id,
+  'start_date': provider.startDate?.toIso8601String(),
+  'end_date': provider.endDate?.toIso8601String(),
+  'reason': provider.reason,
+  'status': 'pending',
+});
 
+print("LEAVE INSERTED SUCCESS");
+
+
+/// 🔥 GET HR + ADMIN + SUPERADMIN
+final users = await supabase
+    .from('users')
+    .select('id')
+    .inFilter('role', ['hr', 'admin', 'superadmin']);
+
+final externalIds = (users as List)
+    .map((u) => u['id'].toString())
+    .toList();
+
+await sendLeaveNotification(
+  title: "Leave Request",
+  message: "${provider.name} applied leave",
+);
+print("NOTIFICATION FUNCTION CALLED");
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(

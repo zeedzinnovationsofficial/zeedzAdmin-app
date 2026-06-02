@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:zeedz_attendance/AdminScreen/organization overview/employees_attendance.dart';
+
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
+import 'package:zeedz_attendance/widget/employee_detail_tab.dart';
 
 class EmployeeProfilePage extends StatefulWidget {
   final Map user;
@@ -197,15 +198,16 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
                       tapTargetSize:
                           MaterialTapTargetSize.shrinkWrap,
                     ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              EmployeesAttendance(user: widget.user),
-                        ),
-                      );
-                    },
+                   onPressed: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EmployeeDetailsTab(
+        user: Map<String, dynamic>.from(widget.user),
+      ),
+    ),
+  );
+},
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: const [

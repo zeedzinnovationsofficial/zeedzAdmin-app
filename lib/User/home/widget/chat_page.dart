@@ -194,24 +194,14 @@ class _ChatPageState extends State<ChatPage> {
     'status': 'sent',
     'seen_by': [],
   });
-
+await NotificationService.sendMessageNotification(
+  title: senderName,
+  message: text,
+  senderId: currentUser, 
+);
   messageController.clear();
 
-  final users = await supabase.from('users').select('onesignal_id, id');
-
-  for (var u in users) {
-    if (u['id'] == currentUser) continue;
-
-    final playerId = u['onesignal_id'];
-
-    if (playerId != null && playerId.toString().isNotEmpty) {
-      await NotificationService.sendNotification(
-        playerId: playerId,
-        title: senderName,
-        body: text,
-      );
-    }
-  }
+ 
 } Future<void> uploadVoice(String path) async {
     try {
       final file = File(path);
@@ -243,24 +233,12 @@ class _ChatPageState extends State<ChatPage> {
         'status': 'sent',
         'seen_by': [],
       });
-
-      /// 🔥 GET RECEIVER ONESIGNAL ID
-      final users = await supabase.from('users').select('onesignal_id, id');
-
-      for (var u in users) {
-        if (u['id'] == currentUser) continue;
-
-        final playerId = u['onesignal_id'];
-
-        if (playerId != null && playerId.toString().isNotEmpty) {
-          await NotificationService.sendNotification(
-            playerId: playerId,
-            title: senderName,
-            body: "🎤 Voice message",
-          );
-        }
-      }
-
+await NotificationService.sendMessageNotification(
+  title: senderName,
+  message: "🎤 Voice message",
+  senderId: currentUser,
+);
+    
       print("✅ Voice sent + Notification sent");
     } catch (e) {
       print("❌ Upload error: $e");

@@ -11,7 +11,52 @@ import 'package:zeedz_attendance/User/attendance/widget/months.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
+List<DateTime> getCycleDatesByMonth(DateTime joiningDate, int selectedMonth) {
+  final now = DateTime.now();
 
+  int year = now.year;
+
+if (selectedMonth > now.month) {
+  year = now.year - 1;
+}
+
+// Month start
+DateTime cycleStart = DateTime(
+  year,
+  selectedMonth,
+  1,
+);
+
+// Month end
+DateTime cycleEnd = DateTime(
+  year,
+  selectedMonth + 1,
+  0,
+);
+
+// Employee joined after month start
+if (cycleStart.isBefore(joiningDate)) {
+  cycleStart = joiningDate;
+}
+
+// Current month → stop at today
+if (selectedMonth == now.month &&
+    year == now.year) {
+  cycleEnd = now;
+}
+
+  List<DateTime> dates = [];
+  for (
+    DateTime d = cycleStart;
+    !d.isAfter(cycleEnd);
+    d = d.add(const Duration(days: 1))
+  ) {
+    dates.add(d);
+  }
+
+  return dates.reversed.toList(); // latest first
+}
+ 
 class EmployeesAttendance extends StatefulWidget {
   final Map user;
 
@@ -19,10 +64,13 @@ class EmployeesAttendance extends StatefulWidget {
 
   @override
   State<EmployeesAttendance> createState() => _EmployeesAttendanceState();
+  
+  
 }
 
 class _EmployeesAttendanceState extends State<EmployeesAttendance> {
   DateTimeRange? selectedRange;
+  List<Map<String, dynamic>> holidayList = [];
   int selectedMonth = DateTime.now().month;
   final ScrollController _scrollController = ScrollController();
   final supabase = Supabase.instance.client;
@@ -32,8 +80,97 @@ class _EmployeesAttendanceState extends State<EmployeesAttendance> {
 
   int itemsLoaded = 15;
   final int loadMore = 15;
+Map<String, int> calculateCycleSummary() {
+  final joiningDate = DateTime.parse(widget.user['joining_date']);
+  final now = DateTime.now();
+  final schedule = widget.user['work_schedule'] ?? "mon_sat";
 
-  @override
+  int present = 0;
+  int pending = 0;
+  int leave = 0;
+  int absent = 0;
+
+  final cycleDates = getCycleDatesByMonth(joiningDate, selectedMonth);
+
+  for (final d in cycleDates) {
+    final dateOnly = DateTime(d.year, d.month, d.day);
+    final todayOnly = DateTime(now.year, now.month, now.day);
+    final dateKey = DateFormat('yyyy-MM-dd').format(dateOnly);
+
+    final record = attendanceList.where((e) {
+      final dbDate = DateTime.parse(e['date']);
+      final dbKey = DateFormat('yyyy-MM-dd').format(dbDate);
+      return dbKey == dateKey;
+    }).toList();
+
+    final leaveRecord = leaveList.where((l) {
+      final start = DateTime.parse(l['start_date']);
+      final end = DateTime.parse(l['end_date']);
+
+      final startOnly = DateTime(start.year, start.month, start.day);
+      final endOnly = DateTime(end.year, end.month, end.day);
+
+      return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+    }).toList();
+
+    bool isHoliday = false;
+
+// weekly holiday
+if (schedule == "mon_fri") {
+  isHoliday =
+      d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
+} else if (schedule == "mon_sat") {
+  isHoliday = d.weekday == DateTime.sunday;
+}
+
+// extra holiday from DB
+final holidayExists = holidayList.any((h) {
+ final raw = h['holiday_date'];
+if (raw == null) return false;
+
+final holidayDate = DateTime.parse(raw.toString());
+
+return holidayDate.year == d.year &&
+       holidayDate.month == d.month &&
+       holidayDate.day == d.day;
+});
+
+if (holidayExists) {
+  isHoliday = true;
+}
+if (leaveRecord.isNotEmpty) {
+  leave++;
+  continue;
+}
+
+if (isHoliday) {
+  continue;
+}
+
+if (record.isNotEmpty) {
+  final status = (record.first['status'] ?? '').toString().toLowerCase();
+
+  if (status == 'approved' || status == 'present') {
+    present++;
+  } else if (status == 'pending') {
+    pending++;
+  } else {
+    absent++;
+  }
+} else {
+  if (dateOnly.isBefore(todayOnly)) {
+    absent++;
+  }
+}
+  }
+  return {
+    "present": present,
+    "pending": pending,
+    "leave": leave,
+    "absent": absent,
+  };
+  }
+ @override
   void initState() {
     super.initState();
     loadAttendance();
@@ -48,25 +185,29 @@ class _EmployeesAttendanceState extends State<EmployeesAttendance> {
     });
   }
 
-  Future<void> loadAttendance() async {
-    final attendanceResponse = await supabase
-        .from('attendance')
-        .select()
-        .eq('user_id', widget.user['id'])
-        .order('date');
+ Future<void> loadAttendance() async {
+  final attendanceResponse = await supabase
+      .from('attendance')
+      .select()
+      .eq('user_id', widget.user['id'])
+      .order('date');
 
-    final leaveResponse = await supabase
-        .from('leave_requests')
-        .select()
-        .eq('user_id', widget.user['id'])
-        .eq('status', 'approved');
+  final leaveResponse = await supabase
+      .from('leave_requests')
+      .select()
+      .eq('user_id', widget.user['id'])
+      .eq('status', 'approved');
 
-    setState(() {
-      attendanceList = List<Map<String, dynamic>>.from(attendanceResponse);
-      leaveList = List<Map<String, dynamic>>.from(leaveResponse);
-    });
-  }
+  final holidayResponse = await supabase
+      .from('holidays')
+      .select();   // your holiday table name
 
+  setState(() {
+    attendanceList = List<Map<String, dynamic>>.from(attendanceResponse);
+    leaveList = List<Map<String, dynamic>>.from(leaveResponse);
+    holidayList = List<Map<String, dynamic>>.from(holidayResponse);
+  });
+}
   /// SUMMARY CALCULATION
   Map<String, int> calculateSummary() {
     final joiningDate = DateTime.parse(widget.user['joining_date']);
@@ -179,7 +320,10 @@ final end = selectedMonth == now.month
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final summary = calculateSummary();
+    
+   final joiningDate = DateTime.parse(widget.user['joining_date']);
+final cycleDates = getCycleDatesByMonth(joiningDate, selectedMonth);
+   final summary = calculateCycleSummary();
     print("summary: ${summary['absent'].toString()}");
 
     return Scaffold(
@@ -192,15 +336,10 @@ final end = selectedMonth == now.month
               /// HEADER
               Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-
                   const Expanded(
                     child: Center(
                       child: Text(
-                        "Attendance",
+                        "",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -265,7 +404,7 @@ final end = selectedMonth == now.month
                 ],
               ),
 
-              SizedBox(height: size.height * 0.02),
+              SizedBox(height: size.height * 0.0002),
               Months(
                 onMonthSelected: (month) {
                   setState(() {
@@ -352,7 +491,7 @@ final end = selectedMonth == now.month
                 rightCard: SummaryCard(
                   value: summary['leave'].toString(),
                   title: "Leave",
-                  valueColor: Colors.orange,
+                  valueColor: Colors.blue,
                 ),
               ),
 
@@ -369,14 +508,12 @@ final end = selectedMonth == now.month
               Expanded(
                 child: ListView.separated(
                   controller: _scrollController,
-                  itemCount: itemsLoaded,
+                  itemCount:cycleDates.length,
                   separatorBuilder: (context, index) => SizedBox(
                     height: MediaQuery.of(context).size.height * 0.011,
                   ),
                   itemBuilder: (context, index) {
-                    DateTime date = DateTime.now().subtract(
-                      Duration(days: index),
-                    );
+                    final date = cycleDates[index];
                     final joiningDate = DateTime.parse(
                       widget.user['joining_date'],
                     );
@@ -386,94 +523,100 @@ final end = selectedMonth == now.month
                     }
 
                     DateTime? punchIn;
-                    DateTime? punchOut;
+DateTime? punchOut;
 
-                    final now = DateTime.now();
+String status = "";
 
-                    String status = "not punchin";
+final dateOnly = DateTime(date.year, date.month, date.day);
+final todayOnly = DateTime.now();
+final todayDate = DateTime(todayOnly.year, todayOnly.month, todayOnly.day);
 
-                    final dateKey =
-                        "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+final dateKey = DateFormat('yyyy-MM-dd').format(dateOnly);
 
-                    final todayKey =
-                        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+final record = attendanceList.firstWhere(
+  (item) {
+    final dbDate = DateTime.parse(item['date']);
+    final dbKey = DateFormat('yyyy-MM-dd').format(dbDate);
+    return dbKey == dateKey;
+  },
+  orElse: () => {},
+);
 
-                    final record = attendanceList.firstWhere(
-                      (item) => item['date'] == dateKey,
-                      orElse: () => {},
-                    );
+final leaveRecord = leaveList.firstWhere(
+  (leave) {
+    final start = DateTime.parse(leave['start_date']);
+    final end = DateTime.parse(leave['end_date']);
 
-                    final leaveRecord = leaveList.firstWhere((leave) {
-                      final start = DateTime.parse(
-                        leave['start_date'],
-                      ).toIso8601String().split('T')[0];
-                      final end = DateTime.parse(
-                        leave['end_date'],
-                      ).toIso8601String().split('T')[0];
+    final startOnly = DateTime(start.year, start.month, start.day);
+    final endOnly = DateTime(end.year, end.month, end.day);
 
-                      return dateKey.compareTo(start) >= 0 &&
-                          dateKey.compareTo(end) <= 0;
-                    }, orElse: () => {});
-                    final schedule = widget.user['work_schedule'];
-                    print("schedule: $schedule");
-                    if (schedule == "mon_fri" &&
-                        (date.weekday == DateTime.saturday ||
-                            date.weekday == DateTime.sunday)) {
-                      status = "holiday";
-                    } else if (schedule == "mon_sat" &&
-                        date.weekday == DateTime.sunday) {
-                      status = "holiday";
-                    } else if (leaveRecord.isNotEmpty) {
-                      status = "leave";
-                    } else if (record.isNotEmpty) {
-                      // print("status: ${record['status']}");
-                      if (record['status'] == 'approved') {
-                        status = "present";
-                      } else if (record['status'] == 'pending') {
-                        status = "pending";
-                      } else if (record['status'] == 'rejected' ||
-                          record['status'] == 'absent') {
-                        status = "absent";
-                      }
+    return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+  },
+  orElse: () => {},
+);
 
-                      if (record['punch_in'] != null) {
-                        punchIn = DateTime.parse(record['punch_in']);
-                      }
+final schedule = widget.user['work_schedule'];
 
-                      if (record['punch_out'] != null) {
-                        punchOut = DateTime.parse(record['punch_out']);
-                      }
-                    } else {
-                      if (dateKey == todayKey) {
-                        final cutoff = DateTime(
-                          now.year,
-                          now.month,
-                          now.day,
-                          23,
-                          59,
-                        );
+bool isHoliday = false;
+if (schedule == "mon_fri") {
+  isHoliday =
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+} else if (schedule == "mon_sat") {
+  isHoliday = date.weekday == DateTime.sunday;
+}
 
-                        if (now.isAfter(cutoff)) {
-                          status = "absent";
-                        } else {
-                          status = "not punchin";
-                        }
-                      } else if (date.isBefore(
-                        DateTime(now.year, now.month, now.day),
-                      )) {
-                        status = "absent"; // ✅ Past day with no punch = absent
-                        print("now: ${now}");
-                      }
-                    }
-                    // print("date: ${date}");
-                    // print("status: ${status}");
-                    return LeaveHistory(
-                      date: date,
-                      punchIn: punchIn,
-                      punchOut: punchOut,
-                      status: status,
-                    );
-                  },
+/// 1. FIRST → if attendance record exists
+if (record.isNotEmpty) {
+  final dbStatus = (record['status'] ?? '').toString().toLowerCase();
+
+  if (dbStatus == 'approved' || dbStatus == 'present') {
+    status = "present";
+  } else if (dbStatus == 'pending') {
+    status = "pending";
+  } else if (dbStatus == 'rejected' || dbStatus == 'absent') {
+    status = "absent";
+  }
+
+  if (record['punch_in'] != null) {
+    punchIn = DateTime.parse(record['punch_in']).toLocal();
+  }
+
+  if (record['punch_out'] != null) {
+    punchOut = DateTime.parse(record['punch_out']).toLocal();
+  }
+}
+
+/// 2. leave
+else if (leaveRecord.isNotEmpty) {
+  status = "leave";
+}
+
+/// 3. holiday
+else if (isHoliday) {
+  status = "holiday";
+}
+
+/// 4. today
+else if (dateOnly == todayDate) {
+  status = "not punchin";
+}
+
+/// 5. previous day no record
+else if (dateOnly.isBefore(todayDate)) {
+  status = "absent";
+}
+
+/// 6. future
+else {
+  status = "";
+}
+
+return LeaveHistory(
+  date: date,
+  punchIn: punchIn,
+  punchOut: punchOut,
+  status: status,
+);}
                 ),
               ),
             ],

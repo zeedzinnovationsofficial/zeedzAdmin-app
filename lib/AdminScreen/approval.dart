@@ -27,42 +27,63 @@ class _AdminPageState extends State<AttendanceApproval> {
   Set<dynamic> selectedIds = {};
   bool selectAll = false;
   Future<List<Map<String, dynamic>>> fetchAttendance() async {
-    var query = supabase.from('attendance').select()
-   .eq('status', 'pending');
 
-    if (startDate != null && endDate != null) {
-      query = query
-          .gte('date', startDate!.toIso8601String().split('T')[0])
-          .lte('date', endDate!.toIso8601String().split('T')[0]);
-    } else {
-      final now = DateTime.now();
-      query = query.lte('date', now.toIso8601String().split('T')[0]);
-    }
+  var query = supabase
+      .from('attendance')
+      .select()
+      .eq('status', 'pending');
 
-    final attendance = await query.order('date', ascending: false);
+  if (startDate != null && endDate != null) {
+    query = query
+        .gte('date', startDate!.toIso8601String().split('T')[0])
+        .lte('date', endDate!.toIso8601String().split('T')[0]);
+  }
 
-    List<Map<String, dynamic>> finalData = [];
+  final attendance = await query.order('date', ascending: false);
 
-    for (var record in attendance) {
-      final userData = await supabase
+  print("RAW ATTENDANCE = $attendance");
+
+  final List<Map<String, dynamic>> finalData =
+      await Future.wait(attendance.map((record) async {
+
+    try {
+
+      final user = await supabase
           .from('users')
           .select('name')
           .eq('id', record['user_id'])
           .maybeSingle();
 
-      finalData.add({
+      return {
         'id': record['id'],
         'user_id': record['user_id'],
-        'name': userData?['name'] ?? "Unknown",
+        'name': user?['name'] ?? "Unknown",
         'date': record['date'],
         'punch_in': record['punch_in'],
         'punch_out': record['punch_out'],
-        'location': record['location'],
-      });
-    }
+        'punch_out_location': record['punch_out_location'],
+      };
 
-    return finalData;
-  }
+    } catch (e) {
+
+      print("USER FETCH ERROR = $e");
+
+      return {
+        'id': record['id'],
+        'user_id': record['user_id'],
+        'name': "Unknown",
+        'date': record['date'],
+        'punch_in': record['punch_in'],
+        'punch_out': record['punch_out'],
+        'punch_out_location': record['punch_out_location'],
+      };
+    }
+  }));
+
+  print("FINAL DATA COUNT = ${finalData.length}");
+
+  return finalData;
+}
 
   String formatAttendanceDate(String dateString) {
     final date = DateTime.parse(dateString);
@@ -165,12 +186,15 @@ class _AdminPageState extends State<AttendanceApproval> {
                                     selectedIds.clear();
 
                                     if (selectAll) {
-                                      for (var item in attendance) {
-                                        
-                                          selectedIds.add(item['id']);
-                                        
-                                      }
-                                    }
+  for (var item in attendance) {
+
+    // ✅ only completed attendance
+    if (item['punch_out'] != null) {
+      selectedIds.add(item['id']);
+    }
+
+  }
+}
                                   });
                                 },
                               ),
@@ -268,23 +292,21 @@ class _AdminPageState extends State<AttendanceApproval> {
                             children: [
                               /// Checkbox
                               if (selectAll)
-                                Checkbox(
-                                  value: selectedIds.contains(data['id']),
-                                  onChanged: (value) {
-                                    if (data['punch_in'] != null &&
-                                        data['punch_out'] != null) {
-                                      setState(() {
-                                        if (value == true) {
-                                          selectedIds.add(data['id']);
-                                        } else {
-                                          selectedIds.remove(data['id']);
-                                          selectAll = false;
-                                        }
-                                      });
-                                    }
-                                  },
-                                ),
-
+  Checkbox(
+    value: selectedIds.contains(data['id']),
+    onChanged: (value) {
+      if (data['punch_in'] != null &&
+          data['punch_out'] != null) {
+        setState(() {
+          if (value == true) {
+            selectedIds.add(data['id']);
+          } else {
+            selectedIds.remove(data['id']);
+          }
+        });
+      }
+    },
+  ),
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -337,7 +359,7 @@ class _AdminPageState extends State<AttendanceApproval> {
                               ),
 
                               SizedBox(height: size.height * 0.01),
-                              Text("Location: ${data['location'] ?? '--'}"),
+                              Text("Location:${data['punch_out_location'] ?? '--'}"),
 
                               SizedBox(height: size.height * 0.02),
 

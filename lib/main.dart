@@ -11,9 +11,14 @@ import 'package:zeedz_attendance/dashboard_page.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/resetpassword_page.dart';
 import 'package:zeedz_attendance/service/realtime_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
 
+  print("🔔 Background Message: ${message.notification?.title}");
+}
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -21,13 +26,8 @@ void main() async {
 
   const isProd = bool.fromEnvironment('dart.vm.product');
 
-  final supabaseUrl = isProd
-      ? dotenv.env['PROD_SUPABASE_URL']
-      : dotenv.env['DEV_SUPABASE_URL'];
-
-  final supabaseKey = isProd
-      ? dotenv.env['PROD_SUPABASE_ANON_KEY']
-      : dotenv.env['DEV_SUPABASE_ANON_KEY'];
+ final supabaseUrl = dotenv.env['PROD_SUPABASE_URL'];
+final supabaseKey = dotenv.env['PROD_SUPABASE_ANON_KEY'];
 
   /// ADD HERE
   if (supabaseUrl == null || supabaseKey == null) {
@@ -35,10 +35,24 @@ void main() async {
   }
 
   ///  DEBUG PRINT
-  print("🔥 ENV: ${isProd ? "PROD" : "DEV"}");
-  print("🌐 URL: $supabaseUrl");
+ print("🔥 ENV: PROD");
+print("🌐 URL: $supabaseUrl");
 
   await Firebase.initializeApp();
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+// 🔔 Notification permission
+await messaging.requestPermission();
+
+// 🔥 Background notification
+FirebaseMessaging.onBackgroundMessage(
+  _firebaseMessagingBackgroundHandler,
+);
+
+// 📱 Get FCM token
+String? token = await messaging.getToken();
+
+print("🔥 FCM TOKEN: $token");
 
   await Supabase.initialize(url: supabaseUrl!, anonKey: supabaseKey!);
   Supabase.instance.client.auth.onAuthStateChange.listen((data) {
@@ -58,43 +72,71 @@ void main() async {
     );
   });
 
-  /// 🔥 ONESIGNAL INIT
-  await OneSignal.initialize("49cf1399-5699-48eb-ac39-7b487a6cc0e5");
-  OneSignal.Notifications.addForegroundWillDisplayListener((event) {
-    print("🔥 Foreground notification received");
+await OneSignal.initialize("ae86ab43-3a9b-4c7a-92c2-831be9a91ad9");
 
-    /// ❌ BLOCK notification inside chat page
-    if (isChatPageOpen) {
-      event.preventDefault(); // 🚫 don't show
-      print("❌ Blocked (ChatPage open)");
-    } else {
-      event.notification.display(); // ✅ show normally
-      print("✅ Notification shown");
-    }
-  });
+await OneSignal.Notifications.requestPermission(true);
+final user = Supabase.instance.client.auth.currentUser;
 
-  /// 🔔 ASK PERMISSION
-  await OneSignal.Notifications.requestPermission(true);
 
-  // 📱 get id
-  await Future.delayed(const Duration(seconds: 5));
+if (user != null) {
+  OneSignal.User.addTagWithKey(
+    "user_id",
+    user.id,
+  );
+}
+await Future.delayed(const Duration(seconds: 5));
 
-  final playerId = OneSignal.User.pushSubscription.id;
 
-  print("🔥 OneSignal ID: $playerId");
+print("OneSignal ID = ${OneSignal.User.pushSubscription.id}");
+print("OneSignal Token = ${OneSignal.User.pushSubscription.token}");
+print("OneSignal OptedIn = ${OneSignal.User.pushSubscription.optedIn}");
+
+
+
+OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+  if (isChatPageOpen) {
+    event.preventDefault();
+  } else {
+    event.notification.display();
+  }
+});
+
+/// 📡 LISTENER (OK HERE)
+OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+  print("🔥 Foreground notification received");
+
+  if (isChatPageOpen) {
+    event.preventDefault();
+  } else {
+    event.notification.display();
+  }
+});
+
+ 
+
+
+
+OneSignal.User.pushSubscription.addObserver((state) async {
+  final playerId = state.current.id;
+
+  if (playerId == null || playerId.isEmpty) {
+    print("Subscription not ready");
+    return;
+  }
 
   final user = Supabase.instance.client.auth.currentUser;
 
-  if (user != null && playerId != null) {
-    await Supabase.instance.client
-        .from('users')
-        .update({'onesignal_id': playerId})
-        .eq('id', user.id);
+  if (user == null) return;
 
-    print("✅ OneSignal ID SAVED");
-  }
-  ;
+  await Supabase.instance.client
+      .from('users')
+      .update({
+        'onesignal_id': playerId,
+      })
+      .eq('id', user.id);
 
+  print("✅ OneSignal ID SAVED: $playerId");
+});
   /// 🔄 REALTIME CHAT
   RealtimeService.start();
   runApp(const MyApp());
@@ -157,7 +199,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       child: MaterialApp(
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(scaffoldBackgroundColor: AppColors.white),
+       theme: ThemeData(
+  scaffoldBackgroundColor: AppColors.white,
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Colors.white,
+    surfaceTintColor: Colors.transparent,
+    scrolledUnderElevation: 0,
+  ),
+),
         home: const AuthGate(),
       ),
     );

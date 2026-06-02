@@ -54,7 +54,7 @@ class SalarySkeleton extends StatelessWidget {
 
           /// recent list skeleton
           Column(
-            children: List.generate(3, (index) {
+            children: List.generate(1, (index) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(

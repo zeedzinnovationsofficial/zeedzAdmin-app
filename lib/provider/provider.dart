@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PunchProvider extends ChangeNotifier {
@@ -15,7 +17,18 @@ class PunchProvider extends ChangeNotifier {
   List<String> todayLeaveUserIds = [];
   List<Map<String, dynamic>> leaveList = [];
   List<Map<String, dynamic>> filteredAttendance = [];
-  
+   double _calculateDistance(List<double> a, List<double> b) {
+    double sum = 0;
+
+    for (int i = 0; i < a.length; i++) {
+      final diff = a[i] - b[i];
+      sum += diff * diff;
+    }
+
+    return sqrt(sum);
+  }
+
+
 
   final supabase = Supabase.instance.client;
 
@@ -39,11 +52,13 @@ class PunchProvider extends ChangeNotifier {
     if (punchOutTime == null) return "--:--";
     return DateFormat('hh:mm a').format(punchOutTime!);
   }
+  
 
   String statusText = "Not Punched";
-  String locationAddress = "--";
+ 
   String photoUrl = '';
-
+String punchInLocation = "--";
+String punchOutLocation = "--";
   String userEmail = "";
 
   bool isLoaded = false;
@@ -127,14 +142,15 @@ int get totalPendingEmployeesToday =>
 Future<void> loadLeavePageData() async {
   await fetchLeaveList(); // ONLY THIS
 }
-Future<void> initializeApp() async {
+
+    Future<void> initializeApp() async {
   try {
     await loadProfile();
     await loadHolidays();
-    await loadAllAttendance();
+   
     await loadTodayPunch();
     await loadMonthlyLeaveCount();
-    await loadTodayAllAttendance();
+   
     await loadEmployees();
     await loadTodayLeave();
   
@@ -220,6 +236,14 @@ Future<void> saveAbsentAndLeaveForToday() async {
 
   final now = DateTime.now();
 
+if (now.weekday == DateTime.sunday) {
+  return;
+}
+
+if (isHoliday(now)) {
+  return;
+}
+
   // ✅ Only after 11:00 AM
   final cutoff = DateTime(now.year, now.month, now.day, 11, 0);
   if (now.isBefore(cutoff)) {
@@ -237,6 +261,28 @@ Future<void> saveAbsentAndLeaveForToday() async {
  for (final user in users) {
   final userId = user['id'];
   final userRole = (user['role'] ?? '').toString().toLowerCase();
+    // ✅ GET USER WORK SCHEDULE
+  final userData = await supabase
+      .from('users')
+      .select('work_schedule')
+      .eq('id', userId)
+      .single();
+
+  final workSchedule =
+      (userData['work_schedule'] ?? 'mon_sat').toString();
+
+  // ✅ SKIP SUNDAY
+  if (workSchedule == 'mon_sat' &&
+      now.weekday == DateTime.sunday) {
+    continue;
+  }
+
+  // ✅ SKIP SATURDAY + SUNDAY
+  if (workSchedule == 'mon_fri' &&
+      (now.weekday == DateTime.saturday ||
+       now.weekday == DateTime.sunday)) {
+    continue;
+  }
 
   // check attendance exists
   final attendance = await supabase
@@ -279,7 +325,7 @@ Future<void> saveAbsentAndLeaveForToday() async {
     }
   }
 
-  await supabase.from('attendance').insert({
+  await supabase.from('attendance').upsert({
     'user_id': userId,
     'date': dateStr,
     'status': leave != null ? 'leave' : 'absent',
@@ -327,11 +373,11 @@ if (record != null &&
 }
 
     // Insert punch
-   await supabase.from('attendance').upsert({
+  await supabase.from('attendance').upsert({
   'user_id': user.id,
   'date': dateOnly,
   'punch_in': now.toIso8601String(),
-  'location': location,
+  'punch_in_location': location, // ✅ only IN location
   'status': 'pending',
   'earned_amount': 0,
   'deductions': 0,
@@ -348,9 +394,9 @@ print("AFTER PUNCH STATUS: ${check['status']}");
 
     // Update UI
     punchInTime = now;
-    punchStatus = "out";
-    statusText = "Punched In";
-    locationAddress = location;
+punchStatus = "out";
+statusText = "Punched In";
+punchInLocation = location;
 
     await loadTodayPunch();
     await loadAttendance();
@@ -382,19 +428,23 @@ Future<void> loadTodayAllAttendance() async {
   notifyListeners();
 }
 
-Future<void> punchOut(BuildContext context) async {
+Future<void> punchOut({
+  required String location,
+  required BuildContext context,
+}) async {
   final user = supabase.auth.currentUser;
   if (user == null) return;
 
   final today = DateTime.now().toIso8601String().split("T")[0];
 
   try {
-    final record = await supabase
-        .from('attendance')
-        .select()
-        .eq('user_id', user.id)
-        .eq('date', today)
-        .maybeSingle();
+    /// ✅ ONLY UPDATE punch_out
+  final record = await supabase
+    .from('attendance')
+    .select('id, punch_out')
+    .eq('user_id', user.id)
+    .eq('date', today)
+    .maybeSingle();
 
     if (record == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -410,10 +460,13 @@ Future<void> punchOut(BuildContext context) async {
       return;
     }
 
-    /// ✅ ONLY UPDATE punch_out
-    await supabase.from('attendance').update({
-      'punch_out': DateTime.now().toIso8601String(),
-    }).eq('id', record['id']);
+ 
+
+
+await supabase.from('attendance').update({
+  'punch_out': DateTime.now().toIso8601String(),
+  'punch_out_location': location,
+}).eq('id', record['id']);
 
     punchOutTime = DateTime.now();
 
@@ -437,13 +490,6 @@ Future<void> punchOut(BuildContext context) async {
   final now = DateTime.now();
   final today = DateFormat('yyyy-MM-dd').format(now);
 
-  punchInTime = null;
-  punchOutTime = null;
-  isRunning = false;
-  punchStatus = "in";
-  statusText = "Punch In";
-  todayStatus = "";
-  locationAddress = "--";
 
   final leaveToday = await supabase
       .from('leave_requests')
@@ -477,24 +523,33 @@ Future<void> punchOut(BuildContext context) async {
 
   final data = await supabase
       .from('attendance')
-      .select('punch_in, punch_out, location, status')
+        .select('punch_in, punch_out, punch_in_location, punch_out_location, status')
       .eq('user_id', user.id)
       .eq('date', today)
       .maybeSingle();
+      if (data == null) {
+  punchInTime = null;
+  punchOutTime = null;
+  isRunning = false;
+  punchStatus = "in";
+  statusText = "Punch In";
+  todayStatus = "";
+  punchInLocation = "--";
+  punchOutLocation = "--";
+}
 
  if (data != null) {
   todayStatus = data['status'];
+punchInLocation = data['punch_in_location'] ?? "--";
+punchOutLocation = data['punch_out_location'] ?? "--";
 
-  if (data['punch_in'] != null) {
-    punchInTime = DateTime.parse(data['punch_in']).toLocal();
-  }
+if (data['punch_in'] != null) {
+  punchInTime = DateTime.parse(data['punch_in']);
+}
 
-  if (data['punch_out'] != null) {
-    punchOutTime = DateTime.parse(data['punch_out']).toLocal();
-  }
-
-  locationAddress = data['location'] ?? "--";
-
+if (data['punch_out'] != null) {
+  punchOutTime = DateTime.parse(data['punch_out']);
+}
   // ✅ Correct order
   if (todayStatus == 'leave') {
     punchStatus = "leave";
@@ -693,15 +748,14 @@ if (now.day >= 25) {
 
 final response = await supabase
     .from('attendance')
-    .select('user_id, date, status, punch_in, punch_out, earned_amount')
+    .select('user_id, date, status, punch_in, punch_out, punch_in_location, punch_out_location, earned_amount')
     .eq('user_id', targetUserId)
     .gte('date', DateFormat('yyyy-MM-dd').format(cycleStart))
     .lte('date', DateFormat('yyyy-MM-dd').format(cycleEnd))
     .order('date', ascending: false);
 
     attendanceList = List<Map<String, dynamic>>.from(response);
-    todayAttendance = List<Map<String, dynamic>>.from(response);
-
+    
     await loadTodayPunch();
     notifyListeners();
   } catch (e) {
@@ -1006,20 +1060,22 @@ totalAbsentEmployees = absentIds.length;
   }
 }
 
-  // total present employees
-  List<Map<String, dynamic>> get todayPresentEmployeesList {
-    final presentIds = attendanceList
-        .where((e) => e['status'] == 'approved')
-        .map<String>((e) => e['user_id'] as String)
-        .toList();
+ List<Map<String, dynamic>> get todayPresentEmployeesList {
+final presentIds = todayAttendance
+    .where((e) =>
+        e['status'] == 'approved' ||
+        e['status'] == 'pending')
+    .map((e) => e['user_id'])
+    .toSet();
 
-    return employeeList
-        .where(
-          (user) =>
-              user['role'] != 'superadmin' && presentIds.contains(user['id']),
-        )
-        .toList();
-  }
+  return employeeList
+      .where(
+        (user) =>
+            user['role'] != 'superadmin' &&
+            presentIds.contains(user['id']),
+      )
+      .toList();
+}
 
   //total pending employees
 List<Map<String, dynamic>> get todayPendingEmployeesList {
@@ -1063,8 +1119,9 @@ final pendingIds = todayAttendance
     .map((e) => e['user_id'])
     .toSet();
   /// ✅ Leave
-  final leaveIds = leaveList.map((e) => e['user_id']).toSet();
-
+ final leaveIds = leaveList
+    .map((e) => e['user_id'].toString())
+    .toSet();
   /// ✅ Active users (NOT absent)
   final activeIds = {
     ...presentIds,
@@ -1075,6 +1132,19 @@ final pendingIds = todayAttendance
  /// ✅ Holiday = no absent employees
 if (isHoliday(DateTime.now())) {
   print("TODAY IS HOLIDAY — NO ABSENT");
+  return [];
+}
+final now = DateTime.now();
+
+final cutoff = DateTime(
+  now.year,
+  now.month,
+  now.day,
+  11,
+  0,
+);
+
+if (now.isBefore(cutoff)) {
   return [];
 }
 
@@ -1310,8 +1380,9 @@ final absentIds = allIds.difference(activeIds);
 
     switch (status) {
       case 'present':
-        present++;
-        break;
+        case 'approved':
+  present++;
+  break;
       case 'absent':
         absent++;
         break;
@@ -1321,6 +1392,7 @@ final absentIds = allIds.difference(activeIds);
       case 'pending':
         pending++;
         break;
+        
     }
   }
 
@@ -1481,18 +1553,24 @@ if (!hasValidPunch && !isOnLeave) {
 
  Future<void> loadAllAttendance() async {
 
-  final response = await supabase
+  /// LOAD ALL ATTENDANCE
+  final allResponse = await supabase
       .from('attendance')
       .select('user_id, date, status, punch_in, earned_amount');
 
-  attendanceList = List<Map<String, dynamic>>.from(response);
+  attendanceList = List<Map<String, dynamic>>.from(allResponse);
 
+  /// LOAD ONLY TODAY ATTENDANCE
   final today =
-      DateTime.now().toIso8601String().split('T')[0];
+      DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-  todayAttendance = attendanceList
-      .where((e) => e['date'] == today)
-      .toList();
+  final todayResponse = await supabase
+      .from('attendance')
+      .select('user_id, date, status, punch_in')
+      .eq('date', today);
+
+  todayAttendance =
+      List<Map<String, dynamic>>.from(todayResponse);
 
   print("ALL DATA: ${attendanceList.length}");
   print("TODAY DATA: ${todayAttendance.length}");

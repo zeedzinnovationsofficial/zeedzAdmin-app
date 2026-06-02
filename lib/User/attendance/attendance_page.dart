@@ -113,7 +113,7 @@ Color getStatusColor(String label) {
   }
 
   /// SUMMARY CALCULATION
- Map<String, int> calculateSummary() {
+Map<String, int> calculateSummary() {
   final provider = context.read<PunchProvider>();
   final joiningDate = DateTime.parse(provider.joiningDate);
   final now = DateTime.now();
@@ -123,52 +123,53 @@ Color getStatusColor(String label) {
   int leave = 0;
   int absent = 0;
 
-  // selected month start
-  DateTime selectedMonthDate = DateTime(now.year, selectedMonth, 1);
 
-  // cycle start = joining day in selected month
-  DateTime cycleStart = DateTime(
-    selectedMonthDate.year,
-    selectedMonthDate.month,
-    joiningDate.day,
-  );
 
-  // if selected month before joining month skip
-  if (cycleStart.isBefore(joiningDate)) {
-    cycleStart = joiningDate;
-  }
 
-  // cycle end = next month joining day - 1
-  DateTime cycleEnd = DateTime(
-    cycleStart.year,
-    cycleStart.month + 1,
-    joiningDate.day,
-  ).subtract(const Duration(days: 1));
+int year = now.year;
 
-  // current month -> only till today
-  if (cycleEnd.isAfter(now)) {
-    cycleEnd = now;
-  }
+if (selectedMonth > now.month) {
+  year = now.year - 1;
+}
 
+// Month start
+DateTime cycleStart = DateTime(
+  year,
+  selectedMonth,
+  1,
+);
+
+// Month end
+DateTime cycleEnd = DateTime(
+  year,
+  selectedMonth + 1,
+  0,
+);
+
+// Employee joined after month start
+if (cycleStart.isBefore(joiningDate)) {
+  cycleStart = joiningDate;
+}
+
+// Current month → stop at today
+if (selectedMonth == now.month &&
+    year == now.year) {
+  cycleEnd = now;
+}
   for (
     DateTime d = cycleStart;
     !d.isAfter(cycleEnd);
     d = d.add(const Duration(days: 1))
   ) {
-   final normalizedDate = DateTime(d.year, d.month, d.day);
+    final normalizedDate = DateTime(d.year, d.month, d.day);
 
-if (provider.isHoliday(normalizedDate)) {
-  continue; // skip holiday from count
-}
+    if (provider.isHoliday(normalizedDate)) continue;
+    if (!isWorkingDay(normalizedDate)) continue;
 
-if (!isWorkingDay(normalizedDate)) {
-  continue; // skip weekend
-}
     final dateKey = DateFormat('yyyy-MM-dd').format(d);
 
     final record = attendanceList.where((e) {
-      final dbDate = e['date'].toString().substring(0, 10);
-      return dbDate == dateKey;
+      return e['date'].toString().substring(0, 10) == dateKey;
     }).toList();
 
     final leaveRecord = leaveList.where((l) {
@@ -182,20 +183,26 @@ if (!isWorkingDay(normalizedDate)) {
       continue;
     }
 
-    if (record.isNotEmpty) {
-      final status =
-          (record.first['status'] ?? '').toString().toLowerCase();
+   final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+final currentKey = DateFormat('yyyy-MM-dd').format(d);
 
-      if (status == 'approved' || status == 'present') {
-        present++;
-      } else if (status == 'pending') {
-        pending++;
-      } else {
-        absent++;
-      }
-    } else {
-      absent++;
-    }
+if (record.isNotEmpty) {
+  final status = (record.first['status'] ?? '').toString().toLowerCase();
+
+  if (status == 'approved' || status == 'present') {
+    present++;
+  } else if (status == 'pending') {
+    pending++;
+  } else {
+    absent++;
+  }
+} else {
+  // 🔥 DO NOT COUNT TODAY AS ABSENT
+  if (currentKey == todayKey) {
+    continue; // not punch in, ignore for summary
+  }
+  absent++;
+}
   }
 
   return {
@@ -453,34 +460,34 @@ if (!isWorkingDay(normalizedDate)) {
                         return dateKey.compareTo(start) >= 0 &&
                             dateKey.compareTo(end) <= 0;
                       }, orElse: () => {});
+                      
 
                       // Leave
                       if (leaveRecord.isNotEmpty) {
                         status = "leave";
                       }
                       // Attendance record exists
+// ✅ ATTENDANCE RECORD EXISTS (DB STATUS WINS)
 else if (record.isNotEmpty) {
   final dbStatus = (record['status'] ?? '').toString().toLowerCase();
-  final hasPunchIn = record['punch_in'] != null;
-  final hasPunchOut = record['punch_out'] != null;
 
- if (dbStatus == 'present' || dbStatus == 'approved') {
-  status = 'present';
-}
-else if (dbStatus == 'pending') {
-  status = 'pending';
-}
-else if (dbStatus == 'rejected') {
-  status = 'rejected';
-}
-else {
-  status = 'not punchin';
-}
+  if (dbStatus == 'present' || dbStatus == 'approved') {
+    status = 'present';
+  } 
+  else if (dbStatus == 'pending') {
+    status = 'pending';
+  } 
+  else if (dbStatus == 'rejected') {
+    status = 'rejected';
+  } 
+  else if (dbStatus == 'absent') {
+    status = 'absent'; // ✅ IMPORTANT FIX
+  }
 
-  if (hasPunchIn) {
+  if (record['punch_in'] != null) {
     punchIn = DateTime.parse(record['punch_in']).toLocal();
   }
-  if (hasPunchOut) {
+  if (record['punch_out'] != null) {
     punchOut = DateTime.parse(record['punch_out']).toLocal();
   }
 }
@@ -488,23 +495,37 @@ else {
 
 // 🔥 ONLY APPLY WHEN NO DB RECORD
 if (record.isEmpty) {
+
+  // ✅ Sunday / Holiday
   if (provider.isHoliday(date) || !isWorkingDay(date)) {
     status = "holiday";
-  } else if (leaveRecord.isNotEmpty) {
-    status = "leave";
-  } else if (dateKey == todayKey) {
-    status = "not punchin";
-  } else {
-    // 🔥 old deleted data should not auto become absent
-    final now = DateTime.now();
-    final isCurrentMonth =
-        date.month == now.month && date.year == now.year;
+  }
 
-    if (isCurrentMonth) {
-      status = "absent";
-    } else {
-      status = "present"; // keep old history visible
-    }
+  // ✅ Leave
+  else if (leaveRecord.isNotEmpty) {
+    status = "leave";
+  }
+
+  // ✅ Today
+  else if (dateKey == todayKey) {
+    status = "not punchin";
+  }
+
+  // ✅ Past working days only
+  else if (
+      DateTime(date.year, date.month, date.day)
+          .isBefore(
+            DateTime(
+              now.year,
+              now.month,
+              now.day,
+            ),
+          )) {
+    status = "absent";
+  }
+
+  else {
+    status = "";
   }
 }
 
@@ -631,8 +652,18 @@ if (record.isEmpty) {
 
         location = record['location'] ?? "-";
       } else {
-        absent++;
-      }
+  final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  final currentKey =
+      "${current.year}-${current.month.toString().padLeft(2, '0')}-${current.day.toString().padLeft(2, '0')}";
+
+  // 🔥 DO NOT COUNT TODAY AS ABSENT
+  if (currentKey == todayKey) {
+    status = "Not Punch In";
+    continue;
+  }
+
+  absent++;
+}
       String paid = leaveType == 'paid' ? "Paid" : "";
       String unpaid = leaveType == 'unpaid' ? "Unpaid" : "";
 
