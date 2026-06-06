@@ -324,7 +324,8 @@ if (isHoliday(now)) {
         deduction = 0;
     }
   }
-
+print("DEVICE TIME: $now");
+print("ISO TIME: ${now.toIso8601String()}");
   await supabase.from('attendance').upsert({
     'user_id': userId,
     'date': dateStr,
@@ -376,7 +377,7 @@ if (record != null &&
   await supabase.from('attendance').upsert({
   'user_id': user.id,
   'date': dateOnly,
-  'punch_in': now.toIso8601String(),
+  'punch_in': now.toUtc().toIso8601String(),
   'punch_in_location': location, // ✅ only IN location
   'status': 'pending',
   'earned_amount': 0,
@@ -464,7 +465,7 @@ Future<void> punchOut({
 
 
 await supabase.from('attendance').update({
-  'punch_out': DateTime.now().toIso8601String(),
+ 'punch_out': DateTime.now().toUtc().toIso8601String(),
   'punch_out_location': location,
 }).eq('id', record['id']);
 

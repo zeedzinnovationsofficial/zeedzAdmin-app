@@ -14,7 +14,31 @@ class EmployeesDetailsPage extends StatefulWidget {
 
 class _EmployeesDetailsPageState extends State<EmployeesDetailsPage> {
   String selectedRole = "All";
+DateTime getCycleStart(DateTime joiningDate, DateTime now) {
+  DateTime start = joiningDate;
 
+  while (true) {
+    final next = DateTime(
+      start.year,
+      start.month + 1,
+      start.day,
+    );
+
+    if (now.isBefore(next)) break;
+
+    start = next;
+  }
+
+  return start;
+}
+
+DateTime getCycleEnd(DateTime cycleStart) {
+  return DateTime(
+    cycleStart.year,
+    cycleStart.month + 1,
+    cycleStart.day - 1,
+  );
+}
   @override
   void initState() {
     super.initState();
@@ -100,16 +124,8 @@ class _EmployeesDetailsPageState extends State<EmployeesDetailsPage> {
 
 final joinDate = DateTime.parse(user['joining_date']);
 final now = DateTime.now();
-
-DateTime cycleStart = joinDate;
-
-while (true) {
-  final next = cycleStart.add(const Duration(days: 30));
-  if (now.isBefore(next)) break;
-  cycleStart = next;
-}
-
-final cycleEnd = cycleStart.add(const Duration(days: 29));
+final cycleStart = getCycleStart(joinDate, now);
+final cycleEnd = getCycleEnd(cycleStart);
 
 final employeeAttendance = punch.attendanceList.where((e) {
   if (e['user_id'] != user['id']) return false;

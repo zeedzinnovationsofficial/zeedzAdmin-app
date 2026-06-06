@@ -85,9 +85,22 @@ class _AttendancePageState extends State<AttendancePage> {
       isLoading = false;
     });
   }
+// 🔁 Attendance cycle start based on joining date (6 → 5 style)
+DateTime getCycleStart(DateTime joiningDate, DateTime now) {
+  final joinDay = joiningDate.day;
 
-  // ---------------- SUMMARY ----------------
+  DateTime currentMonthCycle =
+      DateTime(now.year, now.month, joinDay);
+
+  if (now.day < joinDay) {
+    currentMonthCycle =
+        DateTime(now.year, now.month - 1, joinDay);
+  }
+
+  return currentMonthCycle;
+} // ---------------- SUMMARY ----------------
  Map<String, int> calculateSummary() {
+  
   final provider = context.read<PunchProvider>();
 
   final joiningDate = DateTime.parse(provider.joiningDate);
@@ -101,12 +114,32 @@ class _AttendancePageState extends State<AttendancePage> {
 
   final year = now.year;
 
-  final monthStart = DateTime(year, selectedMonth, 1);
+  DateTime rawCycleStart = getCycleStart(
+  joiningDate,
+  DateTime.now(),
+);
 
-  final monthEnd = (selectedMonth == now.month)
-      ? DateTime(now.year, now.month, now.day)
-      : DateTime(year, selectedMonth + 1, 0);
+// 🔥 IMPORTANT: joining date ku munnadi pogakoodaadhu
+DateTime cycleStart =
+    rawCycleStart.isBefore(joiningDate) ? joiningDate : rawCycleStart;
 
+DateTime cycleEnd = DateTime(
+  cycleStart.year,
+  cycleStart.month + 1,
+  cycleStart.day - 1,
+);
+print("Joining Date: $joiningDate");
+print("Cycle Start: $cycleStart");
+print("Cycle End: $cycleEnd");
+// future day count panna koodaadhu
+if (cycleEnd.isAfter(DateTime.now())) {
+  cycleEnd = DateTime.now();
+}
+
+final monthStart = cycleStart;
+final monthEnd = cycleEnd;
+print("Cycle Start: $cycleStart");
+print("Cycle End: $cycleEnd");
   for (
     DateTime d = monthStart;
     !d.isAfter(monthEnd);
@@ -208,6 +241,7 @@ class _AttendancePageState extends State<AttendancePage> {
     "leave": leave,
     "absent": absent,
   };
+  
 } // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {

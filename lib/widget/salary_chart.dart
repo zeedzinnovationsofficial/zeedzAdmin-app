@@ -22,23 +22,11 @@ class SalaryBarChart extends StatelessWidget {
 }
     final size = MediaQuery.of(context).size;
 
-    final now = DateTime.now();
-    final currentMonth = now.month;
+   final now = DateTime.now();
+final currentMonth = now.month;
 
-    // ---------------- FIX ORDER (CURRENT MONTH LAST) ----------------
-    List<int> months = List.from(chartMonths);
-    List<Map<String, double>> data = List.from(monthlyData);
-
-    int index = months.indexOf(currentMonth);
-
-    if (index != -1) {
-      final m = months.removeAt(index);
-      final d = data.removeAt(index);
-
-      months.add(m);
-      data.add(d);
-    }
-
+List<int> months = List.from(chartMonths);
+List<Map<String, double>> data = List.from(monthlyData);
     final monthLabels =
         months.map((m) => _getMonthName(m)).toList();
 

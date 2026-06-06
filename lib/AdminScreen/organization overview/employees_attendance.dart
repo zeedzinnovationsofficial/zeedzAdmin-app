@@ -11,41 +11,42 @@ import 'package:zeedz_attendance/User/attendance/widget/months.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
-List<DateTime> getCycleDatesByMonth(DateTime joiningDate, int selectedMonth) {
+List<DateTime> getCycleDatesByMonth(
+  DateTime joiningDate,
+  int selectedMonth,
+) {
   final now = DateTime.now();
 
   int year = now.year;
 
-if (selectedMonth > now.month) {
-  year = now.year - 1;
-}
+  if (selectedMonth > now.month) {
+    year--;
+  }
 
-// Month start
-DateTime cycleStart = DateTime(
-  year,
-  selectedMonth,
-  1,
-);
+  final cycleDay = joiningDate.day;
 
-// Month end
-DateTime cycleEnd = DateTime(
-  year,
-  selectedMonth + 1,
-  0,
-);
+  DateTime cycleStart = DateTime(
+    year,
+    selectedMonth,
+    cycleDay,
+  );
 
-// Employee joined after month start
-if (cycleStart.isBefore(joiningDate)) {
-  cycleStart = joiningDate;
-}
+  DateTime cycleEnd = DateTime(
+    year,
+    selectedMonth + 1,
+    cycleDay - 1,
+  );
 
-// Current month → stop at today
-if (selectedMonth == now.month &&
-    year == now.year) {
-  cycleEnd = now;
-}
+  if (cycleStart.isBefore(joiningDate)) {
+    cycleStart = joiningDate;
+  }
+
+  if (cycleEnd.isAfter(now)) {
+    cycleEnd = now;
+  }
 
   List<DateTime> dates = [];
+
   for (
     DateTime d = cycleStart;
     !d.isAfter(cycleEnd);
@@ -54,9 +55,8 @@ if (selectedMonth == now.month &&
     dates.add(d);
   }
 
-  return dates.reversed.toList(); // latest first
+  return dates.reversed.toList();
 }
- 
 class EmployeesAttendance extends StatefulWidget {
   final Map user;
 
@@ -578,11 +578,11 @@ if (record.isNotEmpty) {
   }
 
   if (record['punch_in'] != null) {
-    punchIn = DateTime.parse(record['punch_in']).toLocal();
+    punchIn = DateTime.parse(record['punch_in']);
   }
 
   if (record['punch_out'] != null) {
-    punchOut = DateTime.parse(record['punch_out']).toLocal();
+    punchOut = DateTime.parse(record['punch_out']);
   }
 }
 
@@ -716,14 +716,14 @@ return LeaveHistory(
         }
 
         if (record['punch_in'] != null) {
-          final pIn = DateTime.parse(record['punch_in']);
-          punchIn = DateFormat('hh:mm a').format(pIn);
-        }
+  final pIn = DateTime.parse(record['punch_in']); // ✅ FIX
+  punchIn = DateFormat('hh:mm a').format(pIn);
+}
 
-        if (record['punch_out'] != null) {
-          final pOut = DateTime.parse(record['punch_out']);
-          punchOut = DateFormat('hh:mm a').format(pOut);
-        }
+if (record['punch_out'] != null) {
+  final pOut = DateTime.parse(record['punch_out']); // ✅ FIX
+  punchOut = DateFormat('hh:mm a').format(pOut);
+}
 
         location = record['location'] ?? "-";
       } else {

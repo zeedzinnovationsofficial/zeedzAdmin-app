@@ -111,62 +111,41 @@ Color getStatusColor(String label) {
       isLoading = false;
     });
   }
+DateTimeRange getAttendanceCycleByMonth(
+  DateTime joiningDate,
+  int month,
+  int year,
+) {
+  final cycleDay = joiningDate.day;
 
-  /// SUMMARY CALCULATION
-Map<String, int> calculateSummary() {
+  DateTime start = DateTime(year, month, cycleDay);
+  DateTime end = start.add(const Duration(days: 30));
+
+  return DateTimeRange(start: start, end: end);
+}
+Map<String, int> calculateCycleSummary(DateTime from, DateTime to) {
   final provider = context.read<PunchProvider>();
-  final joiningDate = DateTime.parse(provider.joiningDate);
-  final now = DateTime.now();
 
   int present = 0;
   int pending = 0;
   int leave = 0;
   int absent = 0;
 
+  final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
+ final today = DateTime.now();
 
-
-int year = now.year;
-
-if (selectedMonth > now.month) {
-  year = now.year - 1;
-}
-
-// Month start
-DateTime cycleStart = DateTime(
-  year,
-  selectedMonth,
-  1,
-);
-
-// Month end
-DateTime cycleEnd = DateTime(
-  year,
-  selectedMonth + 1,
-  0,
-);
-
-// Employee joined after month start
-if (cycleStart.isBefore(joiningDate)) {
-  cycleStart = joiningDate;
-}
-
-// Current month → stop at today
-if (selectedMonth == now.month &&
-    year == now.year) {
-  cycleEnd = now;
-}
-  for (
-    DateTime d = cycleStart;
-    !d.isAfter(cycleEnd);
-    d = d.add(const Duration(days: 1))
-  ) {
-    final normalizedDate = DateTime(d.year, d.month, d.day);
-
-    if (provider.isHoliday(normalizedDate)) continue;
-    if (!isWorkingDay(normalizedDate)) continue;
-
+for (
+  DateTime d = from;
+  !d.isAfter(to);
+  d = d.add(const Duration(days: 1))
+) {
+  // 🔥 SKIP FUTURE DAYS
+  if (d.isAfter(today)) continue;
     final dateKey = DateFormat('yyyy-MM-dd').format(d);
+
+    if (provider.isHoliday(d)) continue;
+    if (!isWorkingDay(d)) continue;
 
     final record = attendanceList.where((e) {
       return e['date'].toString().substring(0, 10) == dateKey;
@@ -183,26 +162,21 @@ if (selectedMonth == now.month &&
       continue;
     }
 
-   final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-final currentKey = DateFormat('yyyy-MM-dd').format(d);
+    if (record.isNotEmpty) {
+      final status = (record.first['status'] ?? '').toString().toLowerCase();
 
-if (record.isNotEmpty) {
-  final status = (record.first['status'] ?? '').toString().toLowerCase();
-
-  if (status == 'approved' || status == 'present') {
-    present++;
-  } else if (status == 'pending') {
-    pending++;
-  } else {
-    absent++;
-  }
-} else {
-  // 🔥 DO NOT COUNT TODAY AS ABSENT
-  if (currentKey == todayKey) {
-    continue; // not punch in, ignore for summary
-  }
-  absent++;
-}
+      if (status == 'approved' || status == 'present') {
+        present++;
+      } else if (status == 'pending') {
+        pending++;
+      } else {
+        absent++;
+      }
+    } else {
+      // 🚫 Do not mark today absent
+      if (dateKey == todayKey) continue;
+      absent++;
+    }
   }
 
   return {
@@ -212,15 +186,40 @@ if (record.isNotEmpty) {
     "absent": absent,
   };
 }
+
 @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     if (isLoading) {
       return const Scaffold( body: AttendanceSkeleton(),);
     }
-    final summary = calculateSummary();
+   final provider = context.watch<PunchProvider>();
+final joiningDate = DateTime.parse(provider.joiningDate);
+
+final cycle = getAttendanceCycleByMonth(
+  joiningDate,
+  selectedMonth,
+  DateTime.now().year,
+);
+final cycleDates = <DateTime>[];
+
+for (
+  DateTime d = cycle.start;
+  !d.isAfter(cycle.end);
+  d = d.add(const Duration(days: 1))
+) {
+  cycleDates.add(d);
+}
+cycleDates.removeWhere(
+  (d) => d.isAfter(DateTime.now()),
+);
+
+cycleDates.sort((a, b) => b.compareTo(a));
+final summary = calculateCycleSummary(cycle.start, cycle.end);
+
+
     print("summary['absent'].toString() ${summary['absent'].toString()}");
-    final provider = context.watch<PunchProvider>();
+  
 
     return Scaffold(
       body: RefreshIndicator(
@@ -403,20 +402,19 @@ if (record.isNotEmpty) {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
 
-                SizedBox(height: size.height * 0.01),
+                
 
                 /// ATTENDANCE LIST
                 Expanded(
                   child: ListView.separated(
                     controller: _scrollController,
-                    itemCount: itemsLoaded,
+                    padding: const EdgeInsets.only(bottom: 90),
+                   itemCount: cycleDates.length,
                     separatorBuilder: (context, index) => SizedBox(
                       height: MediaQuery.of(context).size.height * 0.011,
                     ),
                     itemBuilder: (context, index) {
-                      DateTime date = DateTime.now().subtract(
-                        Duration(days: index),
-                      );
+                      final DateTime date = cycleDates[index];
                       final joiningDate = DateTime.parse(
                         context.read<PunchProvider>().joiningDate,
                       );
@@ -485,10 +483,10 @@ else if (record.isNotEmpty) {
   }
 
   if (record['punch_in'] != null) {
-    punchIn = DateTime.parse(record['punch_in']).toLocal();
+    punchIn = DateTime.parse(record['punch_in']);
   }
   if (record['punch_out'] != null) {
-    punchOut = DateTime.parse(record['punch_out']).toLocal();
+    punchOut = DateTime.parse(record['punch_out']);
   }
 }
  final provider = context.read<PunchProvider>();
@@ -511,18 +509,18 @@ if (record.isEmpty) {
     status = "not punchin";
   }
 
-  // ✅ Past working days only
-  else if (
-      DateTime(date.year, date.month, date.day)
-          .isBefore(
-            DateTime(
-              now.year,
-              now.month,
-              now.day,
-            ),
-          )) {
-    status = "absent";
-  }
+ final today = DateTime(now.year, now.month, now.day);
+final checkDate = DateTime(date.year, date.month, date.day);
+
+// 🔥 FUTURE DATE → HIDE
+if (checkDate.isAfter(today)) {
+  return const SizedBox();
+}
+
+// 🔥 PAST DATE ONLY
+else if (checkDate.isBefore(today)) {
+  status = "absent";
+}
 
   else {
     status = "";
@@ -641,14 +639,14 @@ if (record.isEmpty) {
         }
 
         if (record['punch_in'] != null) {
-          final pIn = DateTime.parse(record['punch_in']);
-          punchIn = DateFormat('hh:mm a').format(pIn);
-        }
+  final pIn = DateTime.parse(record['punch_in']); // ✅ FIX
+  punchIn = DateFormat('hh:mm a').format(pIn);
+}
 
-        if (record['punch_out'] != null) {
-          final pOut = DateTime.parse(record['punch_out']);
-          punchOut = DateFormat('hh:mm a').format(pOut);
-        }
+if (record['punch_out'] != null) {
+  final pOut = DateTime.parse(record['punch_out']); // ✅ FIX
+  punchOut = DateFormat('hh:mm a').format(pOut);
+}
 
         location = record['location'] ?? "-";
       } else {

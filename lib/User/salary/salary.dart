@@ -72,9 +72,9 @@ bool absentChecked = false;
   while (true) {
     final next = DateTime(
       start.year,
-      start.month,
+      start.month + 1,
       start.day,
-    ).add(const Duration(days: 30));
+    );
 
     if (now.isBefore(next)) break;
 
@@ -83,6 +83,13 @@ bool absentChecked = false;
 
   return start;
 } /// ✅ DATE FORMAT
+DateTime getCycleEnd(DateTime cycleStart) {
+  return DateTime(
+    cycleStart.year,
+    cycleStart.month + 1,
+    cycleStart.day,
+  ).subtract(const Duration(days: 1));
+}
   String getTodayDate(DateTime now) {
     return "${now.year.toString().padLeft(4, '0')}-"
         "${now.month.toString().padLeft(2, '0')}-"
@@ -122,7 +129,7 @@ bool absentChecked = false;
   if (joiningDate == null) return 0;
 
   final cycleStart = getCycleStart(joiningDate!, now);
-  final cycleEnd = cycleStart.add(const Duration(days: 29));
+final cycleEnd = getCycleEnd(cycleStart);
 
   final response = await supabase
       .from('attendance')
@@ -156,7 +163,8 @@ Future<double> loadCurrentCycleDeductionFromDB() async {
   if (joiningDate == null) return 0;
 
   final cycleStart = getCycleStart(joiningDate!, now);
-  final cycleEnd = cycleStart.add(const Duration(days: 29));
+ final cycleEnd = getCycleEnd(cycleStart);
+
 
   final response = await supabase
       .from('attendance')
@@ -210,8 +218,17 @@ if (joiningDate == null) return;
 
 final cycleStart = getCycleStart(joiningDate!, now);
 
-final cycleEnd =
-    cycleStart.add(const Duration(days: 29));
+final cycleEnd = getCycleEnd(cycleStart);
+final currentCycleStart = cycleStart;
+
+final previousCycleStart = DateTime(
+  currentCycleStart.year,
+  currentCycleStart.month - 1,
+  currentCycleStart.day,
+);
+
+final previousCycleEnd =
+    currentCycleStart.subtract(const Duration(days: 1));
 
 final holidayResponse = await supabase
     .from('holidays')
@@ -271,14 +288,7 @@ final response = await supabase
     .from('attendance')
     .select()
     .eq('user_id', userId)
-    .gte(
-      'date',
-      "${cycleStart.year}-${cycleStart.month.toString().padLeft(2, '0')}-${cycleStart.day.toString().padLeft(2, '0')}",
-    )
     .order('date');
- 
-
-
 
   Map<String, double> earningsMap = {};
 Map<String, double> deductionMap = {};
@@ -325,20 +335,30 @@ deductionMap[cycleKey] =
   // ========================
   // 2️⃣ TOTAL WORKED HOURS LOOP
   // ========================
-  for (var row in response) {
-    if (row['punch_in'] == null || row['punch_out'] == null) continue;
+ for (var row in response) {
+  final rowDate = DateTime.parse(row['date']);
 
-    final punchIn =
-        DateTime.parse(row['punch_in']).toLocal();
-
-    final punchOut =
-        DateTime.parse(row['punch_out']).toLocal();
-
-    double worked =
-        punchOut.difference(punchIn).inMinutes / 60;
-
-    totalWorkedHours += worked;
+  // ✅ only current cycle hours
+  if (rowDate.isBefore(cycleStart) ||
+      rowDate.isAfter(cycleEnd)) {
+    continue;
   }
+
+  if (row['punch_in'] == null || row['punch_out'] == null) {
+    continue;
+  }
+
+  final punchIn =
+      DateTime.parse(row['punch_in']).toLocal();
+
+  final punchOut =
+      DateTime.parse(row['punch_out']).toLocal();
+
+  double worked =
+      punchOut.difference(punchIn).inMinutes / 60;
+
+  totalWorkedHours += worked;
+}
 
   // ========================
   // 3️⃣ CHART DATA
@@ -346,7 +366,8 @@ deductionMap[cycleKey] =
   List<Map<String, double>> tempData = [];
   List<int> tempMonths = [];
 
- final keys = earningsMap.keys.toList();
+ final keys = earningsMap.keys.toList()
+  ..sort((a, b) => a.compareTo(b));
 
 for (String key in keys) {
   final parts = key.split('-');
@@ -368,9 +389,9 @@ for (String key in keys) {
     tempMonths.add(now.month);
   }
 
-  if (tempData.length > 5) {
-    tempData = tempData.sublist(tempData.length - 5);
-    tempMonths = tempMonths.sublist(tempMonths.length - 5);
+  if (tempData.length > 6) {
+    tempData = tempData.sublist(tempData.length - 6);
+    tempMonths = tempMonths.sublist(tempMonths.length - 6);
   }
 
   monthlyData = tempData;
@@ -416,7 +437,7 @@ Future<void> createTodayAttendanceIfMissing() async {
    double monthlySalary = getSalaryByRole(role);
 
    final cycleStart = getCycleStart(joiningDate!, DateTime.now());
-final cycleEnd = cycleStart.add(const Duration(days: 29));
+final cycleEnd = getCycleEnd(cycleStart);
 
 final holidayResponse = await supabase
     .from('holidays')
@@ -481,7 +502,7 @@ Future<void> calculateSalary() async {
   final now = DateTime.now();
   final todayDate = getTodayDate(now);
   final cycleStart = getCycleStart(joiningDate!, now);
-final cycleEnd = cycleStart.add(const Duration(days: 29));
+final cycleEnd = getCycleEnd(cycleStart);
   final userId = supabase.auth.currentUser!.id;
    final role = context.read<PunchProvider>().role;
 final todayLeave = await getTodayLeave();

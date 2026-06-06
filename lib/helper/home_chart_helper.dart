@@ -15,22 +15,41 @@ class HomeChartHelper {
   int leave = 0;
   int absent = 0;
 
-  DateTime getCycleStart(DateTime joiningDate, DateTime now) {
-    DateTime start = joiningDate;
+ DateTime getCycleStart(
+  DateTime joiningDate,
+  DateTime now,
+) {
+  final joinDay = joiningDate.day;
 
-    while (true) {
-      final next = start.add(const Duration(days: 30));
+  DateTime cycleStart =
+      DateTime(now.year, now.month, joinDay);
 
-      if (now.isBefore(next)) break;
-
-      start = next;
-    }
-
-    return start;
+  if (now.day < joinDay) {
+    cycleStart =
+        DateTime(now.year, now.month - 1, joinDay);
   }
 
-  final cycleStart = getCycleStart(joiningDate, now);
-  final cycleEnd = cycleStart.add(const Duration(days: 29));
+  // never before joining date
+  if (cycleStart.isBefore(joiningDate)) {
+    cycleStart = joiningDate;
+  }
+
+  return cycleStart;
+}
+  final cycleStart = getCycleStart(
+  joiningDate,
+  now,
+);
+
+DateTime cycleEnd = DateTime(
+  cycleStart.year,
+  cycleStart.month + 1,
+  cycleStart.day - 1,
+);
+
+if (cycleEnd.isAfter(now)) {
+  cycleEnd = now;
+}
 
   bool isWorkingDay(DateTime d) {
     if (schedule == "mon_fri") {
