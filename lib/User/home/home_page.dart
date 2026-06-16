@@ -39,6 +39,7 @@ class _HomePageState extends State<HomePage>
     with AutomaticKeepAliveClientMixin {
       @override
 bool get wantKeepAlive => true;
+
   bool isLoading = false;
   Map<String, int> chartData = {};
   bool isSummaryLoading = true;
@@ -85,39 +86,64 @@ void initState() {
   });
 }List<Map<String, dynamic>> holidays = [];
    bool get isHoliday => isHolidayToday(holidays);
-  
+   
+  Future<void> _loadChart(PunchProvider provider) async {
+  setState(() => isChartLoading = true);
+
+  final chartMonth =
+      (provider.role == 'employee' || provider.role == 'intern')
+          ? DateTime.now()
+          : selectedMonth;
+
+  chartData = HomeChartHelper.getMonthlyChart(
+    provider,
+    chartMonth,
+  );
+
+  if (mounted) {
+    setState(() => isChartLoading = false);
+  }print("ROLE: ${provider.role}");
+print("CHART MONTH: $chartMonth");
+print("CHART DATA: $chartData");
+}
 Future<void> _loadHomeData(PunchProvider provider) async {
- if (isFirstLoad) {
-  setState(() {
-    isSummaryLoading = true;
-     isChartLoading = true;
-    
-  });
+  if (isFirstLoad) {
+    setState(() {
+      isSummaryLoading = true;
+      isChartLoading = true;
+    });
+  }
+await provider.initializeApp();
+
+if (provider.role == 'employee' || provider.role == 'intern') {
+  final now = DateTime.now();
+
+  await provider.loadMonthlyAttendance(
+    DateTime(now.year, now.month),
+  );
 }
 
-  // 🔥 IMPORTANT: clear old values first
+// 🔥 ADMIN / HR
+if (provider.role == 'superadmin' ||
+    provider.role == 'admin' ||
+    provider.role == 'hr') {
+  await provider.loadSuperAdminStats();
+  await provider.loadAllPendingCount();
+}
+
  
 
-  await provider.initializeApp();
- 
-  if (provider.role == 'superadmin' ||
-      provider.role == 'admin' ||
-      provider.role == 'hr') {
-    await provider.loadSuperAdminStats();
-    await provider.loadAllPendingCount();
-  }
+  // 🔥 IMPORTANT
+  await _loadChart(provider);
 
- chartData = HomeChartHelper.getCycleChart(provider);
-
-print("Chart data testing 1");
   if (!mounted) return;
 
   setState(() {
     isSummaryLoading = false;
-     isChartLoading = false; 
-     isFirstLoad = false;
+    isFirstLoad = false;
   });
-}bool isHolidayToday(List holidays) {
+}
+bool isHolidayToday(List holidays) {
   final today = DateTime.now();
   final todayStr =
       "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
@@ -132,8 +158,8 @@ print("Chart data testing 1");
   super.build(context);
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
-    
- 
+  
+ final hasData = chartData.values.any((v) => v > 0);
     if (isSummaryLoading && isFirstLoad) {
   return const WorkdayLoader();
 }
@@ -142,18 +168,19 @@ print("Chart data testing 1");
 
     return Scaffold(
       body: RefreshIndicator(
-       onRefresh: () async {
+ onRefresh: () async {
   final provider = context.read<PunchProvider>();
 
   await provider.initializeApp();
-
-  chartData = HomeChartHelper.getCycleChart(provider);
 
   if (provider.role == 'admin' ||
       provider.role == 'hr' ||
       provider.role == 'superadmin') {
     await provider.loadSuperAdminStats();
   }
+
+  await _loadChart(provider); // 🔥 MUST
+
 
   setState(() {});
 },
@@ -580,7 +607,7 @@ isSummaryLoading
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => AttendanceApproval(hasBottomNav: false),
+                builder: (_) => AttendanceApproval(hasBottomNav: false, selectedMonth: selectedMonth,),
               ),
             );
           },
@@ -588,7 +615,7 @@ isSummaryLoading
       ),
 
                           SizedBox(height: size.height * 0.015),
-
+                          
                           SummaryRow(
                             leftCard: SummaryCard(
                               value: punch.totalAbsentEmployees.toString(),
@@ -606,8 +633,8 @@ isSummaryLoading
                               },
                             ),
                             rightCard: SummaryCard(
-                              value: punch.todayLeaveEmployeesList.length
-                                  .toString(), //future leave count
+                              value: punch.currentMonthLeaveEmployeesList.length.toString(),
+                                  //future leave count
                               title: "On Leave",
                               valueColor: AppColors.royalblue,
                               onTap: () {
@@ -813,7 +840,7 @@ isSummaryLoading
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => AttendanceApproval(
-                                        hasBottomNav: false,
+                                        hasBottomNav: false, selectedMonth:selectedMonth,
                                       ),
                                     ),
                                   );
@@ -858,11 +885,155 @@ isSummaryLoading
                             ): const SummaryRowSkeleton(),
                           ],
                           if (role == 'employee' || role == 'intern') ...[
-                            const Text(
-                              "",
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
+  //                           Column(
+  //                           crossAxisAlignment: CrossAxisAlignment.start,
+  //                           children: [
+                              
 
+  //                             /// MONTH SELECTOR + CALENDAR
+  //                             Padding(
+  //                               padding: const EdgeInsets.symmetric(
+  //                                 horizontal: 12,
+  //                               ),
+  //                               child: Row(
+  //                                 children: [
+  //                                   const Text(
+  //                                     "Organization Overview",
+  //                                     style: TextStyle(
+  //                                       fontSize: 18,
+  //                                       fontWeight: FontWeight.bold,
+  //                                     ),
+  //                                   ),
+
+  //                                   const Spacer(),
+
+  //                                   // IconButton(
+  //                                   //   icon: const Icon(Icons.calendar_month),
+  //                                   //   onPressed: () async {
+  //                                   //     final picked = await showDateRangePicker(
+  //                                   //       context: context,
+  //                                   //       firstDate: DateTime(2023),
+  //                                   //       lastDate: DateTime.now(),
+  //                                   //     );
+
+  //                                   //     if (picked != null) {
+  //                                   //       setState(() {
+  //                                   //         startDate = picked.start;
+  //                                   //         endDate = picked.end;
+  //                                   //       });
+
+  //                                   //       context
+  //                                   //           .read<PunchProvider>()
+  //                                   //           .loadStatsByRange(
+  //                                   //             picked.start,
+  //                                   //             picked.end,
+  //                                   //           );
+  //                                   //     }
+  //                                   //   },
+  //                                   // ),
+  //                                 ],
+  //                               ),
+  //                             ),
+
+  //                             SizedBox(height: size.height * 0.01),
+
+  //                             /// MONTH LIST
+  //                             SizedBox(
+  //                               height: 40,
+  //                               child: ListView.builder(
+  //                                 scrollDirection: Axis.horizontal,
+  //                                 itemCount: 12,
+  //                                 itemBuilder: (context, index) {
+  //                                   final monthDate = DateTime(
+  //                                     DateTime.now().year,
+  //                                     index + 1,
+  //                                   );
+  //                                   final isFuture = monthDate.isAfter(
+  //                                     DateTime.now(),
+  //                                   );
+
+  //                                   final isSelected =
+  //                                       selectedMonth.month ==
+  //                                           monthDate.month &&
+  //                                       selectedMonth.year == monthDate.year;
+
+  //                                   return GestureDetector(
+  //                                     onTap: () async {
+  // setState(() {
+  //   selectedMonth = monthDate;
+  // });
+
+  // await context.read<PunchProvider>().loadStatsByMonth(monthDate);
+
+  // setState(() {
+  //   chartData = HomeChartHelper.getMonthlyChart(
+  //     context.read<PunchProvider>(),
+  //     monthDate,
+  //   );
+  // });
+
+      
+
+  //                                             context
+  //                                                 .read<PunchProvider>()
+  //                                                 .loadStatsByMonth(monthDate);
+  //                                           },
+  //                                     child: Container(
+  //                                       margin: const EdgeInsets.symmetric(
+  //                                         horizontal: 6,
+  //                                       ),
+  //                                       padding: const EdgeInsets.symmetric(
+  //                                         horizontal: 14,
+  //                                         vertical: 6,
+  //                                       ),
+  //                                       decoration: BoxDecoration(
+  //                                         color: isSelected
+  //                                             ? AppColors.green
+  //                                             : isFuture
+  //                                             ? Colors.grey.shade200
+  //                                             : Colors.white,
+  //                                         borderRadius: BorderRadius.circular(
+  //                                           20,
+  //                                         ),
+  //                                         border: Border.all(
+  //                                           color: Colors.grey.shade300,
+  //                                         ),
+  //                                       ),
+  //                                       child: Center(
+  //                                         child: Text(
+  //                                           [
+  //                                             "Jan",
+  //                                             "Feb",
+  //                                             "Mar",
+  //                                             "Apr",
+  //                                             "May",
+  //                                             "Jun",
+  //                                             "Jul",
+  //                                             "Aug",
+  //                                             "Sep",
+  //                                             "Oct",
+  //                                             "Nov",
+  //                                             "Dec",
+  //                                           ][index],
+  //                                           style: TextStyle(
+  //                                             fontWeight: FontWeight.w500,
+  //                                             color: isFuture
+  //                                                 ? Colors.grey
+  //                                                 : isSelected
+  //                                                 ? Colors.white
+  //                                                 : Colors.black,
+  //                                           ),
+  //                                         ),
+  //                                       ),
+  //                                     ),
+  //                                   );
+  //                                 },
+  //                               ),
+  //                             ),
+  //                           ],
+  //                         ),
+
+                         
                             SizedBox(height: size.height * 0.02),
 
                             // SummaryRow(
@@ -893,15 +1064,25 @@ isSummaryLoading
                             //   ),
                             // ),
 
+
+
 isChartLoading
     ? const AttendanceChartSkeleton()
-    : AttendanceRadialChart(
-        key: ValueKey(chartData.toString()),
-        present: chartData["present"] ?? 0,
-        absent: chartData["absent"] ?? 0,
-        leave: chartData["leave"] ?? 0,
-        pending: chartData["pending"] ?? 0,
-      ),
+    : hasData
+        ? AttendanceRadialChart(
+            key: ValueKey(chartData.toString()),
+            present: chartData["present"] ?? 0,
+            absent: chartData["absent"] ?? 0,
+            leave: chartData["leave"] ?? 0,
+            pending: chartData["pending"] ?? 0,
+          )
+        : const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              "No attendance data for this month",
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
 
                           ],
                           SizedBox(height: size.height * 0.03),

@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class PunchProvider extends ChangeNotifier {
   
   PunchProvider() {}
+  List<Map<String, dynamic>> allAttendanceList = [];
   List<Map<String, dynamic>> attendanceList = [];
   List<Map<String, dynamic>> employeeList = [];
   List<Map<String, dynamic>> todayAttendance = [];
@@ -42,7 +43,7 @@ class PunchProvider extends ChangeNotifier {
   bool isRunning = false;
   String punchStatus = "in";
   bool _isLoadingStats = false;
-
+bool isLoadingAll = false;
   String get inTime {
     if (punchInTime == null) return "--:--";
     return DateFormat('hh:mm a').format(punchInTime!);
@@ -68,7 +69,7 @@ String punchOutLocation = "--";
   String department = "";
   String joiningDate = "";
   String workSchedule = "mon_fri";
-
+double? salary;
   String profileImageUrl = '';
   String? employeeId;
   String role = 'employee';
@@ -120,11 +121,15 @@ int get totalPendingEmployeesToday =>
     supabase.from('attendance').stream(primaryKey: ['id']).listen((
       event,
     ) async {
-      await loadAttendance(); //  refresh monthly list
-      await loadTodayPunch(); // refresh today
-      await loadMonthlyLeaveCount(); // refresh leave
-      await loadAllPendingCount();
-      await loadTodayLeave();
+      await loadAllAttendance();
+await loadTodayAllAttendance();
+await loadTodayPunch();
+
+if (role == 'superadmin' ||
+    role == 'admin' ||
+    role == 'hr') {
+  await loadSuperAdminStats();
+}
       notifyListeners();
     });
   }
@@ -138,7 +143,19 @@ int get totalPendingEmployeesToday =>
   //   notifyListeners();
   // }
   //leave date
-  
+  Future<void> loadAllData() async {
+  isLoadingAll = true;
+  notifyListeners();
+   await fetchLeaveList();
+  await loadEmployees();
+  await loadAllAttendance();
+  await loadTodayAllAttendance();
+ 
+
+
+  isLoadingAll = false;
+  notifyListeners();
+}
 Future<void> loadLeavePageData() async {
   await fetchLeaveList(); // ONLY THIS
 }
@@ -147,17 +164,19 @@ Future<void> loadLeavePageData() async {
   try {
     await loadProfile();
     await loadHolidays();
-   
+   print("MAY 1 HOLIDAY: ${isHoliday(DateTime(2026, 5, 1))}");
     await loadTodayPunch();
     await loadMonthlyLeaveCount();
    
     await loadEmployees();
+    await fetchLeaveList();  
     await loadTodayLeave();
-  
-    await loadAllPendingCount();
+    await loadAllAttendance();
+  await loadTodayAllAttendance(); // ADD THIS
+   
 
-  await loadAllAttendance(); // ADD THIS
-await loadTodayAllAttendance(); // ADD THIS
+  
+
     if (role == 'superadmin' || role == 'admin' || role == 'hr') {
       await loadSuperAdminStats();
     }
@@ -170,6 +189,18 @@ await loadTodayAllAttendance(); // ADD THIS
     isLoaded = true;
     notifyListeners();
   }
+}
+bool isWorkingDay(DateTime d) {
+  final sch = workSchedule?.toLowerCase();
+
+  if (sch == "mon_fri") {
+    return d.weekday >= DateTime.monday &&
+        d.weekday <= DateTime.friday;
+  } else if (sch == "mon_sat") {
+    return d.weekday != DateTime.sunday;
+  }
+
+  return d.weekday != DateTime.sunday;
 }
 Future<void> loadAllPendingCount() async {
   final now = DateTime.now();
@@ -224,6 +255,9 @@ Future<void> loadAllPendingCount() async {
       email = data['email'] ?? '';
       leaveBalance = data['leave_balance'] ?? 0;
       workSchedule = data['work_schedule'] ?? "mon_fri";
+      salary = data['salary'] != null
+    ? double.tryParse(data['salary'].toString())
+    : null;
       print("Loaded role: $role");
 
       notifyListeners();
@@ -377,7 +411,7 @@ if (record != null &&
   await supabase.from('attendance').upsert({
   'user_id': user.id,
   'date': dateOnly,
-  'punch_in': now.toUtc().toIso8601String(),
+  'punch_in': now.toIso8601String(),
   'punch_in_location': location, // ✅ only IN location
   'status': 'pending',
   'earned_amount': 0,
@@ -465,7 +499,7 @@ Future<void> punchOut({
 
 
 await supabase.from('attendance').update({
- 'punch_out': DateTime.now().toUtc().toIso8601String(),
+ 'punch_out': DateTime.now().toIso8601String(),
   'punch_out_location': location,
 }).eq('id', record['id']);
 
@@ -528,7 +562,9 @@ await supabase.from('attendance').update({
       .eq('user_id', user.id)
       .eq('date', today)
       .maybeSingle();
+      
       if (data == null) {
+        
   punchInTime = null;
   punchOutTime = null;
   isRunning = false;
@@ -545,11 +581,15 @@ punchInLocation = data['punch_in_location'] ?? "--";
 punchOutLocation = data['punch_out_location'] ?? "--";
 
 if (data['punch_in'] != null) {
+  print("DB TIME: ${data['punch_in']}");
+print("PARSED UTC: ${DateTime.parse(data['punch_in'])}");
+print("LOCAL TIME: ${DateTime.parse(data['punch_in']).toLocal()}");
   punchInTime = DateTime.parse(data['punch_in']);
 }
 
 if (data['punch_out'] != null) {
   punchOutTime = DateTime.parse(data['punch_out']);
+
 }
   // ✅ Correct order
   if (todayStatus == 'leave') {
@@ -838,7 +878,7 @@ Future<void> loadHolidays() async {
   }
 
   print("HOLIDAYS: $holidayReasons");
-
+print("MAY 1 HOLIDAY: ${isHoliday(DateTime(2026, 5, 1))}");
   notifyListeners();
 }
 bool isHoliday(DateTime date) {
@@ -931,11 +971,19 @@ String getHolidayReason(DateTime date) {
     totalLeaveEmployees = leaveTodayIds.length;
 
     /// 3️⃣ MONTH ATTENDANCE
-    final monthAttendance = await supabase
-        .from('attendance')
-        .select('user_id,status')
-        .gte('date', startOfMonth)
-        .lte('date', today);
+   final monthAttendance = await supabase
+    .from('attendance')
+    .select('user_id,date,status,punch_in')
+    .gte(
+      'date',
+      DateFormat('yyyy-MM-dd')
+          .format(DateTime(selectedMonth.year, selectedMonth.month, 1)),
+    )
+    .lte(
+      'date',
+      DateFormat('yyyy-MM-dd')
+          .format(DateTime(selectedMonth.year, selectedMonth.month + 1, 0)),
+    );
 
     final Set<String> presentIds = {};
     final Set<String> pendingIds = {};
@@ -1009,9 +1057,10 @@ final monthPending = await supabase
     .lte('date', today);
 
 totalPendingEmployees = monthPending.length;
-
+ 
 totalLeaveEmployees = todayLeaveIds.length;
-totalAbsentEmployees = absentIds.length;
+totalAbsentEmployees =
+    getMonthAbsentEmployees(selectedMonth).length;
     /// DEBUG LOGS
     print("Total Employees: $totalEmployees");
     print("Present: $totalPresentEmployees");
@@ -1110,8 +1159,8 @@ List<Map<String, dynamic>> get todayPendingEmployeesList {
       .toSet();
 
   /// ✅ Present (approved only)
- final presentIds = todayAttendance
-    .where((e) => e['status'] == 'approved')
+final presentIds = todayAttendance
+    .where((e) => e['punch_in'] != null)
     .map((e) => e['user_id'])
     .toSet();
 
@@ -1119,7 +1168,6 @@ final pendingIds = todayAttendance
     .where((e) => e['status'] == 'pending')
     .map((e) => e['user_id'])
     .toSet();
-  /// ✅ Leave
  final leaveIds = leaveList
     .map((e) => e['user_id'].toString())
     .toSet();
@@ -1203,8 +1251,43 @@ final absentIds = allIds.difference(activeIds);
 
     notifyListeners();
   }
+  /// 🔥 TEMP NET SALARY MAP
+  final Map<String, double> _netSalaryMap = {};
+
+  void setNetSalary(String userId, double salary) {
+    _netSalaryMap[userId] = salary;
+    notifyListeners();
+  }
+double getCurrentMonthNetSalary(String userId) {
+  double total = 0;
+
+  final now = DateTime.now();
+
+  final monthStart = DateTime(now.year, now.month, 1);
+  final monthEnd = DateTime(now.year, now.month + 1, 0);
+
+  for (final row in allAttendanceList) {
+    if (row['user_id'] != userId) continue;
+
+    final date = DateTime.parse(row['date']);
+
+    /// ✅ ONLY CURRENT MONTH
+    if (date.isBefore(monthStart) || date.isAfter(monthEnd)) continue;
+
+    /// ✅ NO FUTURE DAYS
+    if (date.isAfter(now)) continue;
+
+    final earned =
+        double.tryParse(row['earned_amount']?.toString() ?? '0') ?? 0;
+
+    total += earned;
+  }
+
+  return total;
+}
 
   Future<void> loadStatsByMonth(DateTime month) async {
+    selectedMonth = month;
     final start = DateTime(month.year, month.month, 1);
     final end = DateTime(month.year, month.month + 1, 0);
     final now = DateTime.now();
@@ -1370,49 +1453,146 @@ final absentIds = allIds.difference(activeIds);
     notifyListeners();
   }
 
- Map<String, int> getSummary() {
+ Map<String, int> attendanceSummary = {
+  "present": 0,
+  "absent": 0,
+  "leave": 0,
+  "pending": 0,
+};
+
+void calculateAttendanceSummary(
+  List<Map<String, dynamic>> attendanceList,
+  List<Map<String, dynamic>> leaveList,
+) {
   int present = 0;
-  int absent = 0;
-  int leave = 0;
   int pending = 0;
+  int leave = 0;
+  int absent = 0;
 
-  for (final a in attendanceList) {
-    final status = a['status'];
+  for (final item in attendanceList) {
+    final status = (item['status'] ?? '').toString().toLowerCase();
 
-    switch (status) {
-      case 'present':
-        case 'approved':
-  present++;
-  break;
-      case 'absent':
-        absent++;
-        break;
-      case 'leave':
-        leave++;
-        break;
-      case 'pending':
+    if (status == 'present' || status == 'approved') {
+      present++;
+    } else if (status == 'pending') {
+      pending++;
+    } else if (status == 'rejected') {
+      absent++;
+    }
+  }
+
+  leave = leaveList.length;
+
+  attendanceSummary = {
+    "present": present,
+    "pending": pending,
+    "leave": leave,
+    "absent": absent,
+  };
+
+  notifyListeners();
+}
+Future<void> loadAttendanceDataForHome() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  final attendanceResponse = await supabase
+      .from('attendance')
+      .select()
+      .eq('user_id', user.id);
+
+  final leaveResponse = await supabase
+      .from('leave_requests')
+      .select()
+      .eq('user_id', user.id)
+      .eq('status', 'approved');
+
+  final attendance = List<Map<String, dynamic>>.from(attendanceResponse);
+  final leave = List<Map<String, dynamic>>.from(leaveResponse);
+
+  calculateAttendanceSummary(attendance, leave);
+}
+Future<Map<String, int>> getAttendanceSummary(
+  DateTime from,
+  DateTime to,
+) async {
+  int present = 0;
+  int pending = 0;
+  int leave = 0;
+  int absent = 0;
+
+  final joiningDate = DateTime.parse(this.joiningDate);
+  final today = DateTime.now();
+
+  for (
+    DateTime d = from;
+    !d.isAfter(to);
+    d = d.add(const Duration(days: 1))
+  ) {
+    if (d.isBefore(joiningDate)) continue;
+
+    if (d.isAfter(DateTime(today.year, today.month, today.day))) {
+      continue;
+    }
+
+    if (isHoliday(d)) continue;
+
+    if (!isWorkingDay(d)) continue;
+
+    final dateKey = DateFormat('yyyy-MM-dd').format(d);
+
+    final attendance = attendanceList.where(
+      (e) => e['date'].toString().substring(0, 10) == dateKey,
+    );
+
+    final leaveData = leaveList.where((l) {
+      final start = DateTime.parse(l['start_date']);
+      final end = DateTime.parse(l['end_date']);
+
+      return !d.isBefore(start) && !d.isAfter(end);
+    });
+
+    if (leaveData.isNotEmpty) {
+      leave++;
+      continue;
+    }
+
+    if (attendance.isNotEmpty) {
+      final status =
+          attendance.first['status'].toString().toLowerCase();
+
+      if (status == 'approved' || status == 'present') {
+        present++;
+      } else if (status == 'pending') {
         pending++;
-        break;
-        
+      } else {
+        absent++;
+      }
+    } else {
+      absent++;
     }
   }
 
   return {
     'present': present,
-    'absent': absent,
-    'leave': leave,
     'pending': pending,
+    'leave': leave,
+    'absent': absent,
   };
 }
-
- List<Map<String, dynamic>> getMonthAbsentEmployees(DateTime selectedMonth) {
+List<Map<String, dynamic>> getMonthAbsentEmployees(DateTime month) {
   List<Map<String, dynamic>> result = [];
 
   final now = DateTime.now();
 
   final monthStart = DateTime(selectedMonth.year, selectedMonth.month, 1);
   final monthEnd = DateTime(selectedMonth.year, selectedMonth.month + 1, 0);
+final monthAttendance = allAttendanceList.where((a) {
+  final d = DateTime.parse(a['date']);
 
+  return d.month == selectedMonth.month &&
+         d.year == selectedMonth.year;
+}).toList();
   for (final user in employeeList) {
     if (user['role'] == 'superadmin') continue;
 
@@ -1445,23 +1625,24 @@ final absentIds = allIds.difference(activeIds);
           "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
       /// ✅ Attendance record
-      final record = attendanceList.firstWhere(
-        (a) =>
-            a['user_id'].toString() == user['id'].toString() &&
-            a['date'].toString().substring(0, 10) == dateKey,
-        orElse: () => {},
-      );
+    final records = monthAttendance.where((a) =>
+    a['user_id'].toString() == user['id'].toString() &&
+    a['date'].toString().substring(0, 10) == dateKey
+).toList();
+final record = records.isNotEmpty ? records.last : null;
+if (dateKey == "2026-06-10") {
+  print("USER: ${user['name']}");
+  print("RECORDS: $records");
+}
+   bool hasValidPunch = false;
 
-     bool hasValidPunch = false;
-
-if (record.isNotEmpty) {
-  final hasPunchIn = record['punch_in'] != null;
+if (record != null) {
   final status = (record['status'] ?? '').toString().toLowerCase();
 
-  /// 🔥 FINAL CORRECT LOGIC
-  if (hasPunchIn && status != 'rejected') {
-    hasValidPunch = true;
-  }
+  hasValidPunch =
+      status == 'approved' ||
+      status == 'pending' ||
+      status == 'present';
 }
 
       /// ✅ Leave check
@@ -1496,6 +1677,10 @@ if (isToday) {
 }
 
 if (!hasValidPunch && !isOnLeave) {
+  if (dateKey == DateFormat('yyyy-MM-dd').format(DateTime.now())) {
+  print(
+      "${user['name']} => record=$record status=${record?['status']} punch=${record?['punch_in']}");
+}
   result.add({
     "name": user['name'],
     "department": user['department'],
@@ -1551,7 +1736,36 @@ if (!hasValidPunch && !isOnLeave) {
     return expandedList;
   }
   
+// ================================
+// EMPLOYEE / INTERN - MONTH WISE
+// ================================
+Future<void> loadMonthlyAttendance(DateTime month) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
 
+  final start = DateTime(month.year, month.month, 1);
+  final end = DateTime(month.year, month.month + 1, 0);
+  final now = DateTime.now();
+
+  final response = await supabase
+      .from('attendance')
+      .select(
+          'user_id, date, status, punch_in, punch_out, punch_in_location, punch_out_location, earned_amount')
+      .eq('user_id', user.id)
+      .gte('date', DateFormat('yyyy-MM-dd').format(start))
+      .lte('date', DateFormat('yyyy-MM-dd').format(end))
+      .order('date');
+
+  /// ✅ remove future dates (important)
+  attendanceList = List<Map<String, dynamic>>.from(response)
+      .where((e) {
+        final d = DateTime.parse(e['date']);
+        return !d.isAfter(now);
+      })
+      .toList();
+
+  notifyListeners();
+}
  Future<void> loadAllAttendance() async {
 
   /// LOAD ALL ATTENDANCE
@@ -1559,7 +1773,7 @@ if (!hasValidPunch && !isOnLeave) {
       .from('attendance')
       .select('user_id, date, status, punch_in, earned_amount');
 
-  attendanceList = List<Map<String, dynamic>>.from(allResponse);
+allAttendanceList = List<Map<String, dynamic>>.from(allResponse);
 
   /// LOAD ONLY TODAY ATTENDANCE
   final today =
@@ -1578,12 +1792,21 @@ if (!hasValidPunch && !isOnLeave) {
 
   notifyListeners();
 }
-int selectedMonth = DateTime.now().month;
+DateTime selectedMonth = DateTime.now();
 
-  void setSelectedMonth(int month) {
-    selectedMonth = month;
-    notifyListeners();
-  }
+Future<void> setSelectedMonth(DateTime month) async {
+ selectedMonth = month;
+
+await loadEmployees();
+await fetchLeaveList();
+await loadAllAttendance();
+
+await loadStatsByMonth(month);
+
+notifyListeners();
+
+  
+}
  
 
 

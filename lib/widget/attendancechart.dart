@@ -43,6 +43,7 @@ class AttendanceRadialChart extends StatelessWidget {
           const SizedBox(height: 20),
 
          Expanded(
+          
   child: RepaintBoundary(
     child: PieChart(
          key: const ValueKey("attendance_chart"),

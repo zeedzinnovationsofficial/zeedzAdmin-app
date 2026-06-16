@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -45,7 +46,24 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       await context.read<PunchProvider>().loadProfile();
+final provider = context.read<PunchProvider>();
 
+// Create OneSignal user with Supabase user id
+OneSignal.login(response.user!.id);
+
+// Add tags
+OneSignal.User.addTagWithKey(
+  "role",
+  provider.role,
+);
+
+OneSignal.User.addTagWithKey(
+  "user_id",
+  response.user!.id,
+);
+
+print("✅ OneSignal External ID = ${response.user!.id}");
+print("✅ Role tag = ${provider.role}");
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => Dashboard(currentindex: 0)),

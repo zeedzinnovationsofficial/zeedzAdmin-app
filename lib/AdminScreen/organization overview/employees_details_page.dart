@@ -118,44 +118,13 @@ DateTime getCycleEnd(DateTime cycleStart) {
               itemCount: filteredEmployees.length,
               itemBuilder: (context, index) {
                 final user = filteredEmployees[index];
+                final userId = user['id'];
+final netSalary = punch.getCurrentMonthNetSalary(userId);
                 final role = user['role'];
                  print("NET SALARY = ${user['net_salary']}");
-                double salary = 0;
+              
 
-final joinDate = DateTime.parse(user['joining_date']);
-final now = DateTime.now();
-final cycleStart = getCycleStart(joinDate, now);
-final cycleEnd = getCycleEnd(cycleStart);
 
-final employeeAttendance = punch.attendanceList.where((e) {
-  if (e['user_id'] != user['id']) return false;
-
-  final rowDate = DateTime.parse(e['date']);
-
-  return !rowDate.isBefore(cycleStart) &&
-      !rowDate.isAfter(cycleEnd);
-});
-
-for (var row in employeeAttendance) {
-  salary += double.tryParse(
-        row['earned_amount']?.toString() ?? "0",
-      ) ??
-      0;
-}
-double getSalaryByRole(String role) {
-  switch (role) {
-    case 'intern':
-      return 3000;
-    case 'hr':
-      return 5000;
-    case 'admin':
-      return 8000;
-    case 'super_admin':
-      return 10000;
-    default:
-      return 4000;
-  }
-}
 
                 return InkWell(
   borderRadius: BorderRadius.circular(24),
@@ -315,7 +284,7 @@ double getSalaryByRole(String role) {
        SizedBox(width: 6),
 
       Text(
-            "₹ ${salary.toStringAsFixed(0)}",
+  "₹ ${netSalary.toStringAsFixed(0)}",
 
         style: const TextStyle(
           color: Color.fromARGB(255, 27, 19, 134),

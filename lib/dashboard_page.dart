@@ -23,6 +23,7 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   late int selectedIndex;
 
+  DateTime selectedMonth = DateTime.now();
   @override
   void initState() {
     super.initState();
@@ -33,52 +34,65 @@ class _DashboardState extends State<Dashboard> {
   @override
   Widget build(BuildContext context) {
     final role = context.watch<PunchProvider>().role;
-
+final provider = context.watch<PunchProvider>();
     List<Widget> screens;
     List<Map<String, dynamic>> navItems;
 
     ///  EMPLOYEE
     if (role == 'employee') {
       screens = [
-        HomePage(),
-        DailydataPage(),
-        SalaryDashboardPage(),
-        AttendancePage(),
-        ProfilePage(),
-      ];
+  HomePage(),
+  DailydataPage(),
+
+  if (provider.salary != null)
+    SalaryDashboardPage(),
+
+  AttendancePage(),
+  ProfilePage(),
+];
 
       navItems = [
-        {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.co_present_rounded, "label": "Dailydata"},
-        {"icon": Icons.account_balance_wallet, "label": "Salary"},
-        {"icon": Icons.fact_check, "label": "Attendance"},
-        {"icon": Icons.person, "label": "Profile"},
-      ];
+  {"icon": Icons.home, "label": "Home"},
+  {"icon": Icons.co_present_rounded, "label": "Dailydata"},
+
+  if (provider.salary != null)
+    {"icon": Icons.account_balance_wallet, "label": "Salary"},
+
+  {"icon": Icons.fact_check, "label": "Attendance"},
+  {"icon": Icons.person, "label": "Profile"},
+];
     }
     ///intern
     else if (role == 'intern') {
-      screens = [
-        HomePage(),
-        DailydataPage(),
-        SalaryDashboardPage(),
-        AttendancePage(),
-        ProfilePage(),
-      ];
+     screens = [
+  HomePage(),
+  DailydataPage(),
+
+  if (provider.salary != null)
+    SalaryDashboardPage(),
+
+  AttendancePage(),
+  ProfilePage(),
+];
 
       navItems = [
-        {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.co_present_rounded, "label": "Dailydata"},
-        {"icon": Icons.account_balance_wallet, "label": "Salary"},
-        {"icon": Icons.fact_check, "label": "Attendance"},
-        {"icon": Icons.person, "label": "Profile"},
-      ];
+  {"icon": Icons.home, "label": "Home"},
+  {"icon": Icons.co_present_rounded, "label": "Dailydata"},
+
+  if (provider.salary != null)
+    {"icon": Icons.account_balance_wallet, "label": "Salary"},
+
+  {"icon": Icons.fact_check, "label": "Attendance"},
+  {"icon": Icons.person, "label": "Profile"},
+];
     }
     ///  HR
     else if (role == 'hr') {
       screens = [
         HomePage(),
-         SalaryDashboardPage(),
-        AttendanceApproval(hasBottomNav: true),
+        if (provider.salary != null)
+    SalaryDashboardPage(),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
 
         AttendancePage(),
@@ -86,7 +100,8 @@ class _DashboardState extends State<Dashboard> {
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.account_balance_wallet, "label": "Salary"},
+         if (provider.salary != null)
+    {"icon": Icons.account_balance_wallet, "label": "Salary"},
         {"icon": Icons.approval_outlined, "label": "Approval"},
         {"icon": Icons.verified_outlined, "label": "Leaves"},
 
@@ -97,8 +112,9 @@ class _DashboardState extends State<Dashboard> {
     else if (role == 'admin') {
       screens = [
         HomePage(),
-        SalaryDashboardPage(),
-        AttendanceApproval(hasBottomNav: true),
+        if (provider.salary != null)
+    SalaryDashboardPage(),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
 
         AttendancePage(),
@@ -106,7 +122,8 @@ class _DashboardState extends State<Dashboard> {
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
-        {"icon": Icons.account_balance_wallet, "label": "Salary"},
+         if (provider.salary != null)
+    {"icon": Icons.account_balance_wallet, "label": "Salary"},
         {"icon": Icons.approval_outlined, "label": "Approval"},
         {"icon": Icons.verified_outlined, "label": "Leaves"},
 
@@ -117,13 +134,17 @@ class _DashboardState extends State<Dashboard> {
     else {
       screens = [
         HomePage(),
-        AttendanceApproval(hasBottomNav: true),
+        if (provider.salary != null)
+    SalaryDashboardPage(),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
         EmployeeListPage(),
       ];
 
       navItems = [
         {"icon": Icons.home, "label": "Home"},
+         if (provider.salary != null)
+    {"icon": Icons.account_balance_wallet, "label": "Salary"},
         {"icon": Icons.approval_outlined, "label": "Approval"},
         {"icon": Icons.verified_outlined, "label": "Leaves"},
         {"icon": Icons.admin_panel_settings, "label": "Employees"},

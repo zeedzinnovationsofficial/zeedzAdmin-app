@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/User/home/theme/colors.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 
+
 class LeaveApprovalPage extends StatefulWidget {
   const LeaveApprovalPage({super.key});
 
@@ -381,7 +382,7 @@ Future<void> approveLeave( dynamic leaveId,
       .from('attendance')
       .select('id,status')
       .eq('user_id', userId)
-      .eq('date', onlyDate)
+      .eq('date', onlyDate.toIso8601String())
       .maybeSingle();
 
   if (existing != null) {
@@ -396,7 +397,7 @@ Future<void> approveLeave( dynamic leaveId,
   } else {
     await supabase.from('attendance').insert({
       'user_id': userId,
-      'date': onlyDate,
+        'date': onlyDate.toIso8601String(),
       'status': 'leave',
       'earned_amount': 0,
       'deductions': leaveType == 'unpaid' ? 100 : 0,
@@ -404,6 +405,15 @@ Future<void> approveLeave( dynamic leaveId,
     });
   }
 }
+// 🔥 RELOAD DASHBOARD STATS
+final provider = context.read<PunchProvider>();
+
+await provider.loadStatsByMonth(
+  DateTime.now(), // or selectedMonth if you pass it
+);
+
+await provider.loadSuperAdminStats(); // admin/hr dashboard counts
+
     await loadLeaves();
 
     if (mounted) {

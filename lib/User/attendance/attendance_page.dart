@@ -49,6 +49,7 @@ class _AttendancePageState extends State<AttendancePage> {
       }
     });
   }
+  
 String getAttendanceLabel(Map<String, dynamic> a) {
   final status = a['status'];
   final punchIn = a['punch_in'];
@@ -105,22 +106,21 @@ Color getStatusColor(String label) {
         .eq('status', 'approved');
     print("Test 5");
     setState(() {
-      attendanceList = List<Map<String, dynamic>>.from(attendanceResponse);
-      print("attendanceList: ${attendanceList}");
-      leaveList = List<Map<String, dynamic>>.from(leaveResponse);
-      isLoading = false;
-    });
+  attendanceList = List<Map<String, dynamic>>.from(attendanceResponse);
+  leaveList = List<Map<String, dynamic>>.from(leaveResponse);
+  isLoading = false;
+});
+
+context.read<PunchProvider>().calculateAttendanceSummary(
+  attendanceList,
+  leaveList,
+);
+  
+  
   }
-DateTimeRange getAttendanceCycleByMonth(
-  DateTime joiningDate,
-  int month,
-  int year,
-) {
-  final cycleDay = joiningDate.day;
-
-  DateTime start = DateTime(year, month, cycleDay);
-  DateTime end = start.add(const Duration(days: 30));
-
+  DateTimeRange getMonthRange(int month, int year) {
+  final start = DateTime(year, month, 1);
+  final end = DateTime(year, month + 1, 0); // last day of month
   return DateTimeRange(start: start, end: end);
 }
 Map<String, int> calculateCycleSummary(DateTime from, DateTime to) {
@@ -130,19 +130,31 @@ Map<String, int> calculateCycleSummary(DateTime from, DateTime to) {
   int pending = 0;
   int leave = 0;
   int absent = 0;
-
+final joiningDate = DateTime.parse(provider.joiningDate);
   final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
- final today = DateTime.now();
+final now = DateTime.now();
+final today = DateTime(now.year, now.month, now.day);
 
 for (
   DateTime d = from;
   !d.isAfter(to);
   d = d.add(const Duration(days: 1))
 ) {
+     if (d.isBefore(
+      DateTime(
+        joiningDate.year,
+        joiningDate.month,
+        joiningDate.day,
+      ),
+    )) {
+      continue;
+    }
   // 🔥 SKIP FUTURE DAYS
   if (d.isAfter(today)) continue;
     final dateKey = DateFormat('yyyy-MM-dd').format(d);
+
+
 
     if (provider.isHoliday(d)) continue;
     if (!isWorkingDay(d)) continue;
@@ -176,6 +188,7 @@ for (
       // 🚫 Do not mark today absent
       if (dateKey == todayKey) continue;
       absent++;
+       print("ABSENT COUNTED: $dateKey");
     }
   }
 
@@ -196,26 +209,23 @@ for (
    final provider = context.watch<PunchProvider>();
 final joiningDate = DateTime.parse(provider.joiningDate);
 
-final cycle = getAttendanceCycleByMonth(
-  joiningDate,
+final range = getMonthRange(
   selectedMonth,
   DateTime.now().year,
 );
-final cycleDates = <DateTime>[];
+final List<DateTime> monthDates = [];
 
 for (
-  DateTime d = cycle.start;
-  !d.isAfter(cycle.end);
+  DateTime d = range.start;
+  !d.isAfter(range.end);
   d = d.add(const Duration(days: 1))
 ) {
-  cycleDates.add(d);
+  if (d.isAfter(DateTime.now())) break;
+  monthDates.add(d);
 }
-cycleDates.removeWhere(
-  (d) => d.isAfter(DateTime.now()),
-);
 
-cycleDates.sort((a, b) => b.compareTo(a));
-final summary = calculateCycleSummary(cycle.start, cycle.end);
+monthDates.sort((a, b) => b.compareTo(a));
+final summary = calculateCycleSummary(range.start, range.end);
 
 
     print("summary['absent'].toString() ${summary['absent'].toString()}");
@@ -224,7 +234,7 @@ final summary = calculateCycleSummary(cycle.start, cycle.end);
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
-          await loadAttendance(); // ✅ IMPORTANT
+          await loadAttendance(); 
         },
         child: SafeArea(
           child: Padding(
@@ -409,12 +419,13 @@ final summary = calculateCycleSummary(cycle.start, cycle.end);
                   child: ListView.separated(
                     controller: _scrollController,
                     padding: const EdgeInsets.only(bottom: 90),
-                   itemCount: cycleDates.length,
+                   itemCount: monthDates.length,
+
                     separatorBuilder: (context, index) => SizedBox(
                       height: MediaQuery.of(context).size.height * 0.011,
                     ),
                     itemBuilder: (context, index) {
-                      final DateTime date = cycleDates[index];
+                      final DateTime date = monthDates[index];
                       final joiningDate = DateTime.parse(
                         context.read<PunchProvider>().joiningDate,
                       );
@@ -433,6 +444,20 @@ final summary = calculateCycleSummary(cycle.start, cycle.end);
                       final dateKey =
                           "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
 
+
+// 🔥 FIRST HOLIDAY CHECK
+final isHoliday = context.read<PunchProvider>().isHoliday(date);
+final working = isWorkingDay(date);
+
+// 👉 holiday / weekoff irundha INGA YE STOP
+if (isHoliday || !working) {
+  return LeaveHistory(
+    date: date,
+    punchIn: null,
+    punchOut: null,
+    status: "holiday",
+  );
+}
                       final todayKey =
                           "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
@@ -461,71 +486,37 @@ final summary = calculateCycleSummary(cycle.start, cycle.end);
                       
 
                       // Leave
-                      if (leaveRecord.isNotEmpty) {
-                        status = "leave";
-                      }
-                      // Attendance record exists
-// ✅ ATTENDANCE RECORD EXISTS (DB STATUS WINS)
+                      // Leave
+if (leaveRecord.isNotEmpty) {
+  status = "leave";
+}
+
+// Attendance exists
 else if (record.isNotEmpty) {
-  final dbStatus = (record['status'] ?? '').toString().toLowerCase();
+  final dbStatus =
+      (record['status'] ?? '').toString().toLowerCase();
 
   if (dbStatus == 'present' || dbStatus == 'approved') {
     status = 'present';
-  } 
-  else if (dbStatus == 'pending') {
+  } else if (dbStatus == 'pending') {
     status = 'pending';
-  } 
-  else if (dbStatus == 'rejected') {
+  } else if (dbStatus == 'rejected') {
     status = 'rejected';
-  } 
-  else if (dbStatus == 'absent') {
-    status = 'absent'; // ✅ IMPORTANT FIX
+  } else {
+    status = 'absent';
   }
 
   if (record['punch_in'] != null) {
     punchIn = DateTime.parse(record['punch_in']);
   }
+
   if (record['punch_out'] != null) {
     punchOut = DateTime.parse(record['punch_out']);
   }
 }
- final provider = context.read<PunchProvider>();
 
-// 🔥 ONLY APPLY WHEN NO DB RECORD
-if (record.isEmpty) {
+// No attendance record
 
-  // ✅ Sunday / Holiday
-  if (provider.isHoliday(date) || !isWorkingDay(date)) {
-    status = "holiday";
-  }
-
-  // ✅ Leave
-  else if (leaveRecord.isNotEmpty) {
-    status = "leave";
-  }
-
-  // ✅ Today
-  else if (dateKey == todayKey) {
-    status = "not punchin";
-  }
-
- final today = DateTime(now.year, now.month, now.day);
-final checkDate = DateTime(date.year, date.month, date.day);
-
-// 🔥 FUTURE DATE → HIDE
-if (checkDate.isAfter(today)) {
-  return const SizedBox();
-}
-
-// 🔥 PAST DATE ONLY
-else if (checkDate.isBefore(today)) {
-  status = "absent";
-}
-
-  else {
-    status = "";
-  }
-}
 
                       return LeaveHistory(
                         date: date,
@@ -639,16 +630,18 @@ else if (checkDate.isBefore(today)) {
         }
 
         if (record['punch_in'] != null) {
-  final pIn = DateTime.parse(record['punch_in']); // ✅ FIX
-  punchIn = DateFormat('hh:mm a').format(pIn);
+  final pIn = DateTime.parse(record['punch_in']);
+punchIn = DateFormat('hh:mm a').format(pIn);
+
+
 }
 
 if (record['punch_out'] != null) {
-  final pOut = DateTime.parse(record['punch_out']); // ✅ FIX
-  punchOut = DateFormat('hh:mm a').format(pOut);
+ final pOut = DateTime.parse(record['punch_out']);
+punchOut = DateFormat('hh:mm a').format(pOut);
 }
 
-        location = record['location'] ?? "-";
+        location = record['punch_out_location'] ?? "-";
       } else {
   final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
   final currentKey =

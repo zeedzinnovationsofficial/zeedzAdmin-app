@@ -8,7 +8,7 @@ Future<void> sendLeaveNotification({
 }) async {
 
   const appId = "ae86ab43-3a9b-4c7a-92c2-831be9a91ad9";
-  const restApiKey = "os_v2_app_v2dkwqz2tnghvewcqmn6tki23ec5tm5umouuilmwnbjzxhnl7xb42rvz7zqlavb7ke63gtvfy45qiwfk36nrsldmj7hnsaxknbrnjuy";
+  const restApiKey = "os_v2_app_v2dkwqz2tnghvewcqmn6tki23ecfo5bh4esu475z7xzfiwpp5e5mnxupuelpjtwhmsrz4vwmcfolrrror7kvya5exixzpq3ap6bufei";
 
   final response = await http.post(
     Uri.parse("https://onesignal.com/api/v1/notifications"),

@@ -19,10 +19,19 @@ class PunchHandler {
   if (photo == null) return;
 
   try {
-    bool serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
+   bool serviceEnabled =
+    await Geolocator.isLocationServiceEnabled();
 
-    if (!serviceEnabled) return;
+if (!serviceEnabled) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("Please turn ON Location"),
+    ),
+  );
+
+  await Geolocator.openLocationSettings();
+  return;
+}
 
     LocationPermission permission =
         await Geolocator.checkPermission();
@@ -70,10 +79,19 @@ class PunchHandler {
   if (photo == null) return;
 
   try {
-    bool serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
+   bool serviceEnabled =
+    await Geolocator.isLocationServiceEnabled();
 
-    if (!serviceEnabled) return;
+if (!serviceEnabled) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("Please turn ON Location"),
+    ),
+  );
+
+  await Geolocator.openLocationSettings();
+  return;
+}
 
     LocationPermission permission =
         await Geolocator.checkPermission();

@@ -23,6 +23,7 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   late int selectedIndex;
 
+  DateTime selectedMonth = DateTime.now();
   @override
   void initState() {
     super.initState();
@@ -77,7 +78,7 @@ class _DashboardState extends State<Dashboard> {
       screens = [
         HomePage(),
         DailydataPage(),
-        AttendanceApproval(hasBottomNav: true),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
 
         AttendancePage(),
@@ -97,7 +98,7 @@ class _DashboardState extends State<Dashboard> {
       screens = [
         HomePage(),
         DailydataPage(),
-        AttendanceApproval(hasBottomNav: true),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
 
         AttendancePage(),
@@ -116,7 +117,7 @@ class _DashboardState extends State<Dashboard> {
     else {
       screens = [
         HomePage(),
-        AttendanceApproval(hasBottomNav: true),
+        AttendanceApproval(hasBottomNav: true, selectedMonth: selectedMonth,),
         LeaveApprovalPage(),
         EmployeeListPage(),
       ];

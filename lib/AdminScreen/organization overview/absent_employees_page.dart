@@ -13,22 +13,25 @@ class AbsentEmployeesPage extends StatefulWidget {
 }
 
 class _AbsentEmployeesPageState extends State<AbsentEmployeesPage> {
- @override
-void initState() {
-  super.initState();
+ 
+// @override
+// void initState() {
+//   super.initState();
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final punch = context.read<PunchProvider>();
+//   WidgetsBinding.instance.addPostFrameCallback((_) async {
+//     final punch = context.read<PunchProvider>();
 
-    punch.loadAllAttendance();  
-    punch.fetchLeaveList();     
-  });
-}
+//  await punch.loadStatsByMonth(widget.month);
+//   });
+// }
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final punch = context.watch<PunchProvider>();
+  final punch = context.read<PunchProvider>();
     print(punch.getMonthAbsentEmployees(widget.month));
-   final employees = punch.getMonthAbsentEmployees(widget.month);
+  
+   final employees = List<Map<String, dynamic>>.from(
+  punch.getMonthAbsentEmployees(widget.month),
+);
 
 employees.sort((a, b) {
   final dateA = DateTime.parse(a['date']);

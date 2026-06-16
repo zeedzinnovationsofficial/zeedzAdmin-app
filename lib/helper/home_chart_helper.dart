@@ -15,37 +15,18 @@ class HomeChartHelper {
   int leave = 0;
   int absent = 0;
 
- DateTime getCycleStart(
-  DateTime joiningDate,
-  DateTime now,
-) {
-  final joinDay = joiningDate.day;
+DateTime cycleStart;
+DateTime cycleEnd;
 
-  DateTime cycleStart =
-      DateTime(now.year, now.month, joinDay);
-
-  if (now.day < joinDay) {
-    cycleStart =
-        DateTime(now.year, now.month - 1, joinDay);
-  }
-
-  // never before joining date
-  if (cycleStart.isBefore(joiningDate)) {
-    cycleStart = joiningDate;
-  }
-
-  return cycleStart;
+if (now.day >= 25) {
+  cycleStart = DateTime(now.year, now.month, 25);
+  cycleEnd = DateTime(now.year, now.month + 1, 24);
+} else {
+  cycleStart = DateTime(now.year, now.month - 1, 25);
+  cycleEnd = DateTime(now.year, now.month, 24);
 }
-  final cycleStart = getCycleStart(
-  joiningDate,
-  now,
-);
-
-DateTime cycleEnd = DateTime(
-  cycleStart.year,
-  cycleStart.month + 1,
-  cycleStart.day - 1,
-);
+ 
+ 
 
 if (cycleEnd.isAfter(now)) {
   cycleEnd = now;
@@ -148,5 +129,51 @@ final row = records.first;
     "pending": pending,
   };
 }
+static Map<String, int> getMonthlyChart(
+  PunchProvider provider,
+  DateTime month,
+) {
+  int present = 0;
+  int absent = 0;
+  int leave = 0;
+  int pending = 0;
 
+  final start = DateTime(month.year, month.month, 1);
+  final end = DateTime(month.year, month.month + 1, 0);
+
+  final currentUserId =
+    Supabase.instance.client.auth.currentUser?.id;
+
+for (final a in provider.attendanceList) {
+  final date = DateTime.parse(a['date']).toLocal();
+
+  if (a['user_id'] != currentUserId) continue;
+
+  if (date.isBefore(start) || date.isAfter(end)) continue;
+
+  final status = (a['status'] ?? '').toString().toLowerCase();
+
+  if (status.contains('present') ||
+      status.contains('approved') ||
+      status.contains('out')) {
+    present++;
+  } else if (status.contains('absent')) {
+    absent++;
+  } else if (status.contains('leave')) {
+    leave++;
+  } else if (status.contains('pending') ||
+      status.contains('in') ||
+      status.contains('punch')) {
+    pending++;
+  }
+
+  }
+
+  return {
+    "present": present,
+    "absent": absent,
+    "leave": leave,
+    "pending": pending,
+  };
+}
 }

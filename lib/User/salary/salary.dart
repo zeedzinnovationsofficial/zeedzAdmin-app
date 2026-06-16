@@ -1,9 +1,16 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:zeedz_attendance/User/salary/salary_pdf_service.dart';
+import 'dart:io';
+import 'package:open_filex/open_filex.dart';
 import 'package:zeedz_attendance/widget/recentdetails.dart';
 import 'package:zeedz_attendance/widget/salary_chart.dart';
 import 'package:zeedz_attendance/widget/salaryskeleton.dart';
@@ -12,8 +19,8 @@ import 'package:zeedz_attendance/widget/smallcard.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 
 class SalaryDashboardPage extends StatefulWidget {
-  
-  const SalaryDashboardPage({super.key});
+   final String? employeeId;
+  const SalaryDashboardPage({super.key, this.employeeId});
 
   @override
   State<SalaryDashboardPage> createState() =>
@@ -24,6 +31,12 @@ class _SalaryDashboardPageState
     extends State<SalaryDashboardPage> {
      DateTime? joiningDate;
   final supabase = Supabase.instance.client;
+   String get selectedUserId {
+  return widget.employeeId ??
+      supabase.auth.currentUser!.id;
+}
+final pdfService = SalaryPdfService();
+late pw.Font notoFont;
  List<Map<String, double>> monthlyData = [];
 List<int> chartMonths = [];
  double monthlyTargetHours = 0;
@@ -51,44 +64,15 @@ bool absentChecked = false;
 
   Timer? timer;
    // 👇 PASTE HERE
-  double getSalaryByRole(String role) {
-    switch (role) {
-      case 'intern':
-        return 3000;
-      case 'hr':
-        return 5000;
-      case 'admin':
-        return 8000;
-      case 'super_admin':
-        return 10000;
-      default:
-        return 4000;
-    }
-  }
+ 
 
- DateTime getCycleStart(DateTime joiningDate, DateTime now) {
-  DateTime start = joiningDate;
+ DateTime getCycleStart(DateTime now) {
+  return DateTime(now.year, now.month, 1);
+}
 
-  while (true) {
-    final next = DateTime(
-      start.year,
-      start.month + 1,
-      start.day,
-    );
-
-    if (now.isBefore(next)) break;
-
-    start = next;
-  }
-
-  return start;
-} /// ✅ DATE FORMAT
-DateTime getCycleEnd(DateTime cycleStart) {
-  return DateTime(
-    cycleStart.year,
-    cycleStart.month + 1,
-    cycleStart.day,
-  ).subtract(const Duration(days: 1));
+DateTime getCycleEnd(DateTime now) {
+  return DateTime(now.year, now.month + 1, 1)
+      .subtract(const Duration(days: 1));
 }
   String getTodayDate(DateTime now) {
     return "${now.year.toString().padLeft(4, '0')}-"
@@ -124,12 +108,12 @@ DateTime getCycleEnd(DateTime cycleStart) {
 }
   Future<double> loadCurrentCycleEarnedFromDB() async {
   final userId = supabase.auth.currentUser!.id;
-  final now = DateTime.now();
+
 
   if (joiningDate == null) return 0;
 
-  final cycleStart = getCycleStart(joiningDate!, now);
-final cycleEnd = getCycleEnd(cycleStart);
+ final cycleStart = getCycleStart(DateTime.now());
+final cycleEnd = getCycleEnd(DateTime.now());
 
   final response = await supabase
       .from('attendance')
@@ -158,12 +142,12 @@ final cycleEnd = getCycleEnd(cycleStart);
 }
 Future<double> loadCurrentCycleDeductionFromDB() async {
   final userId = supabase.auth.currentUser!.id;
-  final now = DateTime.now();
+
 
   if (joiningDate == null) return 0;
 
-  final cycleStart = getCycleStart(joiningDate!, now);
- final cycleEnd = getCycleEnd(cycleStart);
+ final cycleStart = getCycleStart(DateTime.now());
+final cycleEnd = getCycleEnd(DateTime.now());
 
 
   final response = await supabase
@@ -215,20 +199,11 @@ Future<void> loadMonthlyData() async {
   final now = DateTime.now();
 if (joiningDate == null) return;
 
+final cycleStart = getCycleStart(DateTime.now());
+final cycleEnd = getCycleEnd(DateTime.now());
 
-final cycleStart = getCycleStart(joiningDate!, now);
 
-final cycleEnd = getCycleEnd(cycleStart);
-final currentCycleStart = cycleStart;
 
-final previousCycleStart = DateTime(
-  currentCycleStart.year,
-  currentCycleStart.month - 1,
-  currentCycleStart.day,
-);
-
-final previousCycleEnd =
-    currentCycleStart.subtract(const Duration(days: 1));
 
 final holidayResponse = await supabase
     .from('holidays')
@@ -293,9 +268,10 @@ final response = await supabase
   Map<String, double> earningsMap = {};
 Map<String, double> deductionMap = {};
 
-final role = context.read<PunchProvider>().role;
 
-double monthlySalary = getSalaryByRole(role);
+
+double monthlySalary = await getUserSalary();
+
 
 
 double perHour = monthlySalary / workingDays / 8;
@@ -307,8 +283,8 @@ double perHour = monthlySalary / workingDays / 8;
 
 final date = DateTime.parse(row['date']);
 
-final cycleStart =
-    getCycleStart(joiningDate!, date);
+final cycleStart = DateTime(date.year, date.month, 1);
+
 
 final cycleKey =
     "${cycleStart.year}-${cycleStart.month}-${cycleStart.day}";
@@ -365,7 +341,22 @@ deductionMap[cycleKey] =
   // ========================
   List<Map<String, double>> tempData = [];
   List<int> tempMonths = [];
+// Add all months from joining date until current month
+if (joiningDate != null) {
+  DateTime m = DateTime(
+    joiningDate!.year,
+    joiningDate!.month,
+  );
 
+  while (!m.isAfter(DateTime.now())) {
+    final key = "${m.year}-${m.month}-1";
+
+    earningsMap.putIfAbsent(key, () => 0);
+    deductionMap.putIfAbsent(key, () => 0);
+
+    m = DateTime(m.year, m.month + 1);
+  }
+}
  final keys = earningsMap.keys.toList()
   ..sort((a, b) => a.compareTo(b));
 
@@ -414,6 +405,33 @@ Future<Map<String, dynamic>?> getTodayLeave() async {
 
   return res;
 }
+Future<String> getEmployeeName() async {
+  final res = await supabase
+      .from('users')
+      .select('name')
+      .eq('id', selectedUserId)
+      .single();
+
+  return res['name'] ?? '';
+}
+Future<String> getEmployeeId() async {
+  final res = await supabase
+      .from('users')
+      .select('employee_id')
+      .eq('id', selectedUserId)
+      .single();
+
+  return res['employee_id'] ?? '';
+}
+Future<double> getUserSalary() async {
+  final res = await supabase
+      .from('users')
+      .select('salary')
+      .eq('id', selectedUserId)
+      .single();
+
+  return (res['salary'] ?? 0).toDouble();
+}
 Future<void> createTodayAttendanceIfMissing() async {
   final userId = supabase.auth.currentUser!.id;
   final todayDate = getTodayDate(DateTime.now());
@@ -432,12 +450,12 @@ Future<void> createTodayAttendanceIfMissing() async {
       .maybeSingle();
 
   if (existing == null) {
-    final role = context.read<PunchProvider>().role;
+   
 
-   double monthlySalary = getSalaryByRole(role);
+   double monthlySalary = await getUserSalary();
 
-   final cycleStart = getCycleStart(joiningDate!, DateTime.now());
-final cycleEnd = getCycleEnd(cycleStart);
+ final cycleStart = getCycleStart(DateTime.now());
+final cycleEnd = getCycleEnd(DateTime.now());
 
 final holidayResponse = await supabase
     .from('holidays')
@@ -482,9 +500,13 @@ for (
     payableDays--;
   }
 }
-
+print("MONTHLY SALARY = $monthlySalary");
+print("PAYABLE DAYS = $payableDays");
+print("PER DAY = ${monthlySalary / payableDays}");
 double perDay = monthlySalary / payableDays;
-
+print("Salary = $monthlySalary");
+print("Payable days = $payableDays");
+print("Per day = $perDay");
     await supabase.from('attendance').insert({
       'user_id': userId,
       'date': todayDate,
@@ -501,22 +523,22 @@ Future<void> calculateSalary() async {
 
   final now = DateTime.now();
   final todayDate = getTodayDate(now);
-  final cycleStart = getCycleStart(joiningDate!, now);
-final cycleEnd = getCycleEnd(cycleStart);
+ final cycleStart = getCycleStart(DateTime.now());
+final cycleEnd = getCycleEnd(DateTime.now());
   final userId = supabase.auth.currentUser!.id;
-   final role = context.read<PunchProvider>().role;
+  
 final todayLeave = await getTodayLeave();
-double monthlySalary = getSalaryByRole(role);
+double monthlySalary = await getUserSalary();
 
-int payableDays = 30;
+int payableDays = 0;
 
 for (
   DateTime d = cycleStart;
   !d.isAfter(cycleEnd);
   d = d.add(const Duration(days: 1))
 ) {
-  if (d.weekday == DateTime.sunday) {
-    payableDays--;
+  if (d.weekday != DateTime.sunday) {
+    payableDays++;
   }
 }
 
@@ -751,7 +773,11 @@ double finalNet =
     earnedToday + finalExtraEarning - remainingDeduction;
 
 if (finalNet < 0) finalNet = 0;
-
+// ✅ STORE FINAL NET SALARY IN PROVIDER (HERE ONLY)
+context.read<PunchProvider>().setNetSalary(
+  selectedUserId, // 👈 VERY IMPORTANT (not auth user always)
+  finalNet,
+);
 // 7️⃣ Store deduction for UI / DB
 totalDeduction = remainingDeduction;
 double lateDeduction = finalLateHours * perHour;
@@ -826,18 +852,19 @@ if (isWorkCompleted) {
   timer?.cancel();
 
   // prevent repeated update after punch out
-  final dbEarned =
-      double.tryParse(attendance['earned_amount']?.toString() ?? '0') ?? 0;
+if (attendance != null && attendance['punch_out'] != null) {
 
-  if (dbEarned == 0) {
-    await supabase
-        .from('attendance')
-        .update({
-          'earned_amount':  earnedToday + finalExtraEarning,
-          'deductions': remainingDeduction,
-        })
-        .eq('id', attendance['id']);
-  }
+  await supabase.from('attendance').update({
+    'earned_amount': earnedToday + finalExtraEarning,
+    'deductions': remainingDeduction,
+    
+  }).eq('id', attendance['id']);
+
+  totalNet = await loadCurrentCycleEarnedFromDB();
+  totalDeductionAll = await loadCurrentCycleDeductionFromDB();
+
+  timer?.cancel();
+}
 
   totalDeduction = remainingDeduction;
 
@@ -977,12 +1004,18 @@ Future<void> loadAllData({bool refresh = false}) async {
   }
 
   joiningDate = await getJoiningDate();
+
   await loadMonthlyData();
 
   totalNet = await loadCurrentCycleEarnedFromDB();
   totalDeductionAll = await loadCurrentCycleDeductionFromDB();
 
-  await calculateSalary();
+  await calculateSalary(); // KEEP LAST
+
+  context.read<PunchProvider>().setNetSalary(
+    selectedUserId,
+    totalNet,
+  );
 
   setState(() {
     isLoading = false;
@@ -1007,12 +1040,116 @@ Future<void> loadAllData({bool refresh = false}) async {
               await loadAllData();
             },
             child :SingleChildScrollView(  physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             child: Column(
-              children: [
+             children: [
+
+ Padding(
+  padding: const EdgeInsets.only(top: 50),
+  child: Row(mainAxisAlignment: .spaceBetween,
+    children: [
+      const Text(
+        "Salary",
+        style: TextStyle(
+          fontSize: 18,
+          color: Colors.black,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+
+      const SizedBox(width: 8),
+
+      IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: const Icon(
+          Icons.download_for_offline_outlined,
+          color: Colors.black,
+          size: 30,
+        ),
+        onPressed: () async {
+          if (joiningDate == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Loading employee data..."),
+              ),
+            );
+            return;
+          }
+
+          final picked = await showDateRangePicker(
+            context: context,
+            firstDate: joiningDate!,
+            lastDate: DateTime.now(),
+            helpText: "Select Salary Range",
+          );
+
+          if (picked == null) return;
+
+          final start = picked.start;
+          final end = picked.end;
+
+          
+
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text("Download Salary PDF"),
+      content: Text(
+        "From ${start.day}-${start.month}-${start.year}\n"
+        "To ${end.day}-${end.month}-${end.year}",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text("Download"),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  final data = await pdfService.getAttendanceForPdf(
+    userId: selectedUserId,
+    start: start,
+    end: end,
+    supabase: Supabase.instance.client,
+  );
+
+  final employeeName = await getEmployeeName();
+  final employeeId = await getEmployeeId();
+await pdfService.loadFont();
+  await pdfService.generateAttendancePdf(
+    attendanceData: data,
+    joiningDate: joiningDate!,
+    employeeName: employeeName,
+    employeeId: employeeId,
+    startDate: start,
+    endDate: end, context: context,
+  );
+  ScaffoldMessenger.of(context).showSnackBar(
+  const SnackBar(
+    content: Text("PDF downloaded successfully"),
+    backgroundColor: Colors.green,
+  ),
+);
+}
+   ),
+ 
+           
+        
+  
+      ],
+    ),
+  ),
                 Container(
                  width: double.infinity,
-  margin: const EdgeInsets.only(top: 60), 
+  margin: const EdgeInsets.only(top: 10),
   
                   padding: const EdgeInsets.all(16,),
                   decoration: BoxDecoration(
@@ -1026,59 +1163,79 @@ Future<void> loadAllData({bool refresh = false}) async {
                         BorderRadius.circular(16),
                   ),
                   child: Column(
+                    
                     crossAxisAlignment:
                         CrossAxisAlignment.start,
+                        
                     children: [
-                      const Text("Net Salary",
-                          style: TextStyle(
-                              color: Colors.white70)),
-                      SizedBox(
-                          height: size.height * 0.02),
-                      Text(
-                        "₹ ${totalNet.toStringAsFixed(0)}",
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight:
-                                FontWeight.bold),
-                      ),
-                      SizedBox(
-                          height: size.height * 0.02),
-                      Text(
-                        "Gross: $gross | Deduction: ₹${totalDeductionAll.toStringAsFixed(2)}",
-                        style: const TextStyle(
-                            color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: size.height * 0.02),
-                Row(
-                  children: [
-                    SmallCard(
-                      title: "Earnings",
-                      value: "+₹${earnedToday.toStringAsFixed(2)}",
-                      isGreen: true,
-                    ),
-                    SmallCard(
-                      title: "Deduction",
-                      value:
-                          "-₹${totalDeduction.toStringAsFixed(2)}",
-                      isRed: true,
-                    ),
-                  ],
-                ),
-                SizedBox(height: size.height * 0.02),
-                SectionCard(
-                  title: "6-Month Trend",
-                  child:  SalaryBarChart(monthlyData: monthlyData, chartMonths:chartMonths),
-                ),
-                SizedBox(height: size.height * 0.02),
-                RecentRecords(records: recentList),
-                  SizedBox(height: size.height * 0.1)
-              ],
-            ),
-          ),)
+                                Row(mainAxisAlignment: .spaceBetween,
+            children: [
+              const Text("Net Salary",
+                  style: TextStyle(
+                      color: Colors.white70)),
+                     ],
+          ),
+          SizedBox(
+              height: size.height * 0.001),
+          Text(
+            "₹ ${totalNet.toStringAsFixed(0)}",
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight:
+                    FontWeight.bold),
+          ),
+          SizedBox(
+              height: size.height * 0.02),
+          Text(
+            "Gross: $gross | Deduction: ₹${totalDeductionAll.toStringAsFixed(2)}",
+            style: const TextStyle(
+                color: Colors.white70),
+          ),
+        ],
+      ),
+        ),
+        SizedBox(height: size.height * 0.02),
+        Row(
+      children: [
+        Expanded(
+          child: SmallCard(
+            title: "Earnings",
+            value: "+₹${earnedToday.toStringAsFixed(2)}",
+            isGreen: true,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SmallCard(
+            title: "Deduction",
+            value: "-₹${totalDeduction.toStringAsFixed(2)}",
+            isRed: true,
+          ),
+        ),
+      ],
+        ),SizedBox(height: size.height * 0.02),
+       SectionCard(
+  title: "6-Month Trend",
+  child: SizedBox(
+    height: 220, // 👈 PUT HERE
+    child: SalaryBarChart(
+      monthlyData: monthlyData,
+      chartMonths: chartMonths,
+    ),
+  ),
+),
+        SizedBox(height: size.height * 0.02),
+       SizedBox(
+  child: Padding(
+    padding: const EdgeInsets.only(bottom: 20),
+    child: RecentRecords(records: recentList),
+  ),
+),
+                   SizedBox( height:size.height*0.1),
+            ]),)
+      ),
     );
   }
+  
 } 

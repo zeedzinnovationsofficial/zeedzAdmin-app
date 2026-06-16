@@ -7,7 +7,8 @@ import 'package:zeedz_attendance/widget/attendanceskeleton.dart';
 
 class AttendanceApproval extends StatefulWidget {
   final bool hasBottomNav; 
-  const AttendanceApproval({super.key, required this.hasBottomNav});
+   final DateTime selectedMonth;
+  const AttendanceApproval({super.key, required this.hasBottomNav, required this.selectedMonth});
 
   @override
   State<AttendanceApproval> createState() => _AdminPageState();
@@ -15,29 +16,29 @@ class AttendanceApproval extends StatefulWidget {
 
 class _AdminPageState extends State<AttendanceApproval> {
   DateTime? startDate;
+  DateTime selectedMonth = DateTime.now();
   DateTime? endDate;
   late Future<List<Map<String, dynamic>>> attendanceFuture;
   final supabase = Supabase.instance.client;
   @override
   void initState() {
     super.initState();
+    selectedMonth = widget.selectedMonth;
     attendanceFuture = fetchAttendance();
   }
 
   Set<dynamic> selectedIds = {};
   bool selectAll = false;
   Future<List<Map<String, dynamic>>> fetchAttendance() async {
+final start = DateTime(selectedMonth.year, selectedMonth.month, 1);
+final end = DateTime(selectedMonth.year, selectedMonth.month + 1, 0);
 
-  var query = supabase
-      .from('attendance')
-      .select()
-      .eq('status', 'pending');
-
-  if (startDate != null && endDate != null) {
-    query = query
-        .gte('date', startDate!.toIso8601String().split('T')[0])
-        .lte('date', endDate!.toIso8601String().split('T')[0]);
-  }
+var query = supabase
+    .from('attendance')
+    .select()
+    .eq('status', 'pending')
+    .gte('date', start.toIso8601String().split('T')[0])
+    .lte('date', end.toIso8601String().split('T')[0]);
 
   final attendance = await query.order('date', ascending: false);
 
@@ -442,6 +443,13 @@ await context.read<PunchProvider>().loadAllPendingCount();
   setState(() {
      attendanceFuture = fetchAttendance();
   });
+   if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("Attendance approved successfully"),
+      backgroundColor: Colors.green,
+    ),
+  );
 }
 /// REJECT SINGLE
 Future<void> rejectAttendance(dynamic id, String reason) async {
@@ -475,6 +483,13 @@ await context.read<PunchProvider>().loadAllPendingCount();
     selectAll = false;
     attendanceFuture = fetchAttendance();
   });
+   if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("Selected attendance approved"),
+      backgroundColor: Colors.green,
+    ),
+  );
 }/// REJECT BULK
  Future<void> rejectSelected(String reason) async {
   
@@ -495,6 +510,14 @@ await context.read<PunchProvider>().loadAllPendingCount();
     selectAll = false;
     attendanceFuture = fetchAttendance();
   });
+   if (!context.mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("Selected attendance rejected"),
+      backgroundColor: Colors.red,
+    ),
+  );
 }
 
  void showRejectDialog(dynamic id) {

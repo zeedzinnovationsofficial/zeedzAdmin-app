@@ -11,51 +11,21 @@ import 'package:zeedz_attendance/User/attendance/widget/months.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/widget/summer_card_widget.dart';
 import 'package:zeedz_attendance/widget/summer_row_widget.dart';
-List<DateTime> getCycleDatesByMonth(
-  DateTime joiningDate,
-  int selectedMonth,
-) {
-  final now = DateTime.now();
-
-  int year = now.year;
-
-  if (selectedMonth > now.month) {
-    year--;
-  }
-
-  final cycleDay = joiningDate.day;
-
-  DateTime cycleStart = DateTime(
-    year,
-    selectedMonth,
-    cycleDay,
-  );
-
-  DateTime cycleEnd = DateTime(
-    year,
-    selectedMonth + 1,
-    cycleDay - 1,
-  );
-
-  if (cycleStart.isBefore(joiningDate)) {
-    cycleStart = joiningDate;
-  }
-
-  if (cycleEnd.isAfter(now)) {
-    cycleEnd = now;
-  }
+List<DateTime> getMonthDates(int month, int year) {
+  final start = DateTime(year, month, 1);
+  final end = DateTime(year, month + 1, 0); // last day
 
   List<DateTime> dates = [];
 
   for (
-    DateTime d = cycleStart;
-    !d.isAfter(cycleEnd);
+    DateTime d = start;
+    !d.isAfter(end);
     d = d.add(const Duration(days: 1))
   ) {
     dates.add(d);
   }
 
-  return dates.reversed.toList();
+  return dates;
 }
 class EmployeesAttendance extends StatefulWidget {
   final Map user;
@@ -90,11 +60,31 @@ Map<String, int> calculateCycleSummary() {
   int leave = 0;
   int absent = 0;
 
-  final cycleDates = getCycleDatesByMonth(joiningDate, selectedMonth);
 
-  for (final d in cycleDates) {
+final year = now.year;
+
+final monthDates = getMonthDates(selectedMonth, year);
+
+  for (final d in monthDates) {
+    // 🔴 JOINING DATE CHECK (FIRST)
+final joiningDate = DateTime.parse(widget.user['joining_date']);
+final joinOnly = DateTime(
+  joiningDate.year,
+  joiningDate.month,
+  joiningDate.day,
+);
+
+final today = DateTime.now();
+final todayOnly = DateTime(today.year, today.month, today.day);
+
+// 🔴 JOINING DATE-KU MUNNADI → SKIP
+if (d.isBefore(joinOnly)) continue;
+
+// 🔴 FUTURE DATE → SKIP
+if (d.isAfter(todayOnly)) continue;
+
     final dateOnly = DateTime(d.year, d.month, d.day);
-    final todayOnly = DateTime(now.year, now.month, now.day);
+
     final dateKey = DateFormat('yyyy-MM-dd').format(dateOnly);
 
     final record = attendanceList.where((e) {
@@ -138,12 +128,14 @@ return holidayDate.year == d.year &&
 if (holidayExists) {
   isHoliday = true;
 }
-if (leaveRecord.isNotEmpty) {
-  leave++;
+// ✅ 1. HOLIDAY FIRST
+if (isHoliday) {
   continue;
 }
 
-if (isHoliday) {
+// ✅ 2. LEAVE NEXT
+if (leaveRecord.isNotEmpty) {
+  leave++;
   continue;
 }
 
@@ -242,6 +234,15 @@ final end = selectedMonth == now.month
       !d.isAfter(end);
       d = d.add(const Duration(days: 1))
     ) {
+        if (d.isBefore(
+      DateTime(
+        joiningDate.year,
+        joiningDate.month,
+        joiningDate.day,
+      ),
+    )) {
+      continue;
+    }
       if (schedule == "mon_fri") {
         if (d.weekday == DateTime.saturday || d.weekday == DateTime.sunday)
           continue;
@@ -322,7 +323,8 @@ final end = selectedMonth == now.month
     final size = MediaQuery.of(context).size;
     
    final joiningDate = DateTime.parse(widget.user['joining_date']);
-final cycleDates = getCycleDatesByMonth(joiningDate, selectedMonth);
+final year = DateTime.now().year;
+final monthDates = getMonthDates(selectedMonth, year);
    final summary = calculateCycleSummary();
     print("summary: ${summary['absent'].toString()}");
 
@@ -502,21 +504,80 @@ final cycleDates = getCycleDatesByMonth(joiningDate, selectedMonth);
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
 
-              SizedBox(height: size.height * 0.01),
 
               /// ATTENDANCE LIST
               Expanded(
                 child: ListView.separated(
                   controller: _scrollController,
-                  itemCount:cycleDates.length,
+                  itemCount: monthDates.length,
+
                   separatorBuilder: (context, index) => SizedBox(
                     height: MediaQuery.of(context).size.height * 0.011,
                   ),
                   itemBuilder: (context, index) {
-                    final date = cycleDates[index];
-                    final joiningDate = DateTime.parse(
-                      widget.user['joining_date'],
-                    );
+                    final date = monthDates[index];
+                    final joiningDate = DateTime.parse(widget.user['joining_date']);
+final joinOnly = DateTime(
+  joiningDate.year,
+  joiningDate.month,
+  joiningDate.day,
+);
+
+final today = DateTime.now();
+final todayOnly = DateTime(today.year, today.month, today.day);
+
+// 🔴 1. JOINING DATE-KU MUNNADI → HIDE
+if (date.isBefore(joinOnly)) {
+  return const SizedBox();
+}
+
+// 🔴 2. FUTURE DATE → HIDE
+if (date.isAfter(todayOnly)) {
+  return const SizedBox();
+}
+
+
+
+// 🔴 FUTURE DATE CHECK (FIRST)
+if (date.isAfter(todayOnly)) {
+  return const SizedBox(); // hide future dates
+}
+
+                   
+final schedule = widget.user['work_schedule'];
+
+// 🔴 DB HOLIDAY CHECK (FIRST)
+final isDbHoliday = holidayList.any((h) {
+  final raw = h['holiday_date'];
+  if (raw == null) return false;
+
+  final hd = DateTime.parse(raw);
+  return hd.year == date.year &&
+         hd.month == date.month &&
+         hd.day == date.day;
+});
+
+// 🔴 WEEKLY HOLIDAY
+bool isWeeklyHoliday = false;
+if (schedule == "mon_fri") {
+  isWeeklyHoliday =
+      date.weekday == DateTime.saturday ||
+      date.weekday == DateTime.sunday;
+} else if (schedule == "mon_sat") {
+  isWeeklyHoliday = date.weekday == DateTime.sunday;
+}
+
+// ✅ IF HOLIDAY → STOP EVERYTHING HERE
+if (isDbHoliday || isWeeklyHoliday) {
+  return LeaveHistory(
+    date: date,
+    punchIn: null,
+    punchOut: null,
+    status: "holiday",
+  );
+}
+                    
+                    
                     print("Join Date: $joiningDate");
                     if (date.isBefore(joiningDate)) {
                       return const SizedBox();
@@ -528,34 +589,35 @@ DateTime? punchOut;
 String status = "";
 
 final dateOnly = DateTime(date.year, date.month, date.day);
-final todayOnly = DateTime.now();
+
 final todayDate = DateTime(todayOnly.year, todayOnly.month, todayOnly.day);
 
 final dateKey = DateFormat('yyyy-MM-dd').format(dateOnly);
 
+
 final record = attendanceList.firstWhere(
   (item) {
-    final dbDate = DateTime.parse(item['date']);
-    final dbKey = DateFormat('yyyy-MM-dd').format(dbDate);
-    return dbKey == dateKey;
+    final dbDate = DateTime.parse(item['date']).toLocal();
+
+    return dbDate.year == date.year &&
+        dbDate.month == date.month &&
+        dbDate.day == date.day;
   },
   orElse: () => {},
 );
 
 final leaveRecord = leaveList.firstWhere(
   (leave) {
-    final start = DateTime.parse(leave['start_date']);
-    final end = DateTime.parse(leave['end_date']);
+    final start = DateTime.parse(leave['start_date']).toLocal();
+    final end = DateTime.parse(leave['end_date']).toLocal();
 
-    final startOnly = DateTime(start.year, start.month, start.day);
-    final endOnly = DateTime(end.year, end.month, end.day);
-
-    return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+    return !date.isBefore(DateTime(start.year, start.month, start.day)) &&
+           !date.isAfter(DateTime(end.year, end.month, end.day));
   },
   orElse: () => {},
 );
 
-final schedule = widget.user['work_schedule'];
+
 
 bool isHoliday = false;
 if (schedule == "mon_fri") {
@@ -603,7 +665,34 @@ else if (dateOnly == todayDate) {
 
 /// 5. previous day no record
 else if (dateOnly.isBefore(todayDate)) {
-  status = "absent";
+  // check if it's working day first
+
+  bool isWeekend = false;
+
+  if (schedule == "mon_fri") {
+    isWeekend = date.weekday == DateTime.saturday ||
+                date.weekday == DateTime.sunday;
+  } else if (schedule == "mon_sat") {
+    isWeekend = date.weekday == DateTime.sunday;
+  }
+
+  final holidayExists = holidayList.any((h) {
+    final raw = h['holiday_date'];
+    if (raw == null) return false;
+
+    final holidayDate = DateTime.parse(raw.toString());
+    return holidayDate.year == date.year &&
+           holidayDate.month == date.month &&
+           holidayDate.day == date.day;
+  });
+
+  final isLeave = leaveRecord.isNotEmpty;
+
+  if (!isWeekend && !holidayExists && !isLeave) {
+    status = "absent";
+  } else {
+    status = "";
+  }
 }
 
 /// 6. future
@@ -725,7 +814,7 @@ if (record['punch_out'] != null) {
   punchOut = DateFormat('hh:mm a').format(pOut);
 }
 
-        location = record['location'] ?? "-";
+        location = record['punch_out_location'] ?? "-";
       } else {
         absent++;
       }

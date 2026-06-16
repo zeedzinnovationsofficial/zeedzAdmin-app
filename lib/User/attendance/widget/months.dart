@@ -53,7 +53,9 @@ class _MonthsState extends State<Months> {
                       selectedIndex = index;
                     });
                     widget.onMonthSelected?.call(index + 1);
-                    context.read<PunchProvider>().setSelectedMonth(index + 1);
+                    context.read<PunchProvider>().setSelectedMonth(
+  DateTime(DateTime.now().year, index + 1),
+);
 
                     // showModalBottomSheet(
                     //   context: context,

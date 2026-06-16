@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zeedz_attendance/provider/provider.dart';
 import 'package:zeedz_attendance/service/onesignal_service.dart';
+
 class SubmitButton extends StatelessWidget {
   const SubmitButton({super.key});
 
@@ -67,6 +68,7 @@ class SubmitButton extends StatelessWidget {
   'end_date': provider.endDate?.toIso8601String(),
   'reason': provider.reason,
   'status': 'pending',
+   
 });
 
 print("LEAVE INSERTED SUCCESS");

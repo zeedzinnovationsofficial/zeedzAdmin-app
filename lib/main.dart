@@ -26,6 +26,13 @@ void main() async {
 
   const isProd = bool.fromEnvironment('dart.vm.product');
 
+  // final supabaseUrl = isProd
+  //     ? dotenv.env['PROD_SUPABASE_URL']
+  //     : dotenv.env['DEV_SUPABASE_URL'];
+
+  // final supabaseKey = isProd
+  //     ? dotenv.env['PROD_SUPABASE_ANON_KEY']
+  //     : dotenv.env['DEV_SUPABASE_ANON_KEY'];
  final supabaseUrl = dotenv.env['PROD_SUPABASE_URL'];
 final supabaseKey = dotenv.env['PROD_SUPABASE_ANON_KEY'];
 
@@ -175,6 +182,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
   }
 
   @override
