@@ -1,24 +1,24 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class NotificationService {
 
-  static const String appId = "ae86ab43-3a9b-4c7a-92c2-831be9a91ad9";
-  static const String restApiKey = "os_v2_app_v2dkwqz2tnghvewcqmn6tki23ec5tm5umouuilmwnbjzxhnl7xb42rvz7zqlavb7ke63gtvfy45qiwfk36nrsldmj7hnsaxknbrnjuy";
+  static final appId = dotenv.env['ONESIGNAL_APP_ID']!;
+static final restApiKey = dotenv.env['ONESIGNAL_REST_API_KEY']!;
 
   static Future<void> sendMessageNotification({
   required String title,
   required String message,
   required String senderId,
-}) async {
-  
-
+}) 
+async {  
    final response = await http.post(
-  Uri.parse("https://onesignal.com/api/v1/notifications"),
-  headers: {
-    "Content-Type": "application/json; charset=utf-8",
-    "Authorization": "Basic $restApiKey",
-  },
+   Uri.parse("https://api.onesignal.com/notifications"),
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Authorization": "Key $restApiKey",
+    },
   body: jsonEncode({
     "app_id": appId,
     "filters": [

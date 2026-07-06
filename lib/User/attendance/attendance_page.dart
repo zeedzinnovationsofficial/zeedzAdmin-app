@@ -25,7 +25,6 @@ class _AttendancePageState extends State<AttendancePage> {
   int selectedMonth = DateTime.now().month;
   final ScrollController _scrollController = ScrollController();
   final supabase = Supabase.instance.client;
-
   List<Map<String, dynamic>> attendanceList = [];
   List<Map<String, dynamic>> leaveList = [];
 

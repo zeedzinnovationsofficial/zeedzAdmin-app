@@ -79,7 +79,13 @@ print("🔥 FCM TOKEN: $token");
     );
   });
 
-await OneSignal.initialize("ae86ab43-3a9b-4c7a-92c2-831be9a91ad9");
+final oneSignalAppId = dotenv.env['ONESIGNAL_APP_ID'];
+
+if (oneSignalAppId == null) {
+  throw Exception("Missing OneSignal App ID");
+}
+
+await OneSignal.initialize(oneSignalAppId);
 
 await OneSignal.Notifications.requestPermission(true);
 final user = Supabase.instance.client.auth.currentUser;

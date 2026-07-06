@@ -1,33 +1,29 @@
 import 'dart:convert';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 Future<void> sendLeaveNotification({
   required String title,
   required String message,
-}) async {
-
-  const appId = "ae86ab43-3a9b-4c7a-92c2-831be9a91ad9";
-  const restApiKey = "os_v2_app_v2dkwqz2tnghvewcqmn6tki23ecfo5bh4esu475z7xzfiwpp5e5mnxupuelpjtwhmsrz4vwmcfolrrror7kvya5exixzpq3ap6bufei";
+})
+ async {
+ final appId = dotenv.env['ONESIGNAL_APP_ID']!;
+  final restApiKey = dotenv.env['ONESIGNAL_REST_API_KEY']!;
 
   final response = await http.post(
-    Uri.parse("https://onesignal.com/api/v1/notifications"),
+   Uri.parse("https://api.onesignal.com/notifications"),
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Authorization": "Basic $restApiKey",
+      "Authorization": "Key $restApiKey",
     },
     body: jsonEncode({
-      "app_id": appId,
-
-      // 👇 send to multiple roles
+      "app_id": appId,      
       "filters": [
-        {"field": "tag", "key": "role", "relation": "=", "value": "hr"},
-        {"operator": "OR"},
-        {"field": "tag", "key": "role", "relation": "=", "value": "admin"},
-        {"operator": "OR"},
-        {"field": "tag", "key": "role", "relation": "=", "value": "superadmin"},
+        {"field": "tag", "key": "role", "relation": "!=", "value": "intern"},
+        {"operator": "AND"}, 
+        {"field": "tag", "key": "role", "relation": "!=", "value": "employee"}
       ],
-
       "headings": {"en": title},
       "contents": {"en": message},
     }),

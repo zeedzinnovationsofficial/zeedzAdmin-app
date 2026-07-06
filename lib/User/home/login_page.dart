@@ -61,7 +61,22 @@ OneSignal.User.addTagWithKey(
   "user_id",
   response.user!.id,
 );
+await Future.delayed(const Duration(seconds: 2));
 
+final onesignalId = OneSignal.User.pushSubscription.id;
+
+print("OneSignal ID = $onesignalId");
+
+if (onesignalId != null) {
+  await supabase
+      .from('users')
+      .update({
+        'onesignal_id': onesignalId,
+      })
+      .eq('id', response.user!.id);
+
+  print("✅ OneSignal ID saved to Supabase");
+}
 print("✅ OneSignal External ID = ${response.user!.id}");
 print("✅ Role tag = ${provider.role}");
       Navigator.pushReplacement(

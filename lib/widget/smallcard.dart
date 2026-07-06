@@ -27,52 +27,50 @@ class SmallCard extends StatelessWidget {
       valueColor = Colors.red;
     }
 
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.all(6),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color.fromARGB(255, 228, 228, 228),
-            width: 1,
+    return Container(
+      margin: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color.fromARGB(255, 228, 228, 228),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Text(
-              title,
-              style: const TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 6),
-
-            /// 🔥 VALUE + ICON ROW
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, color: valueColor, size: 18),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: valueColor,
-                  ),
-                ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 6),
+    
+          /// 🔥 VALUE + ICON ROW
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, color: valueColor, size: 18),
+                const SizedBox(width: 4),
               ],
-            ),
-          ],
-        ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: valueColor,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

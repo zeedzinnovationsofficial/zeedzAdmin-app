@@ -24,6 +24,7 @@ class _DailydataPageState extends State<DailydataPage> {
   DateTime? endDate;
 Future<List<Map<String, dynamic>>>? leavesFuture;
 Future<bool>? holidayFuture;
+
   @override
 void initState() {
   super.initState();
@@ -106,6 +107,7 @@ final isAfter11 =
 
 final hasPunchedIn =
     punch.inTime.isNotEmpty && punch.inTime != "--:--";
+    final isSunday = now.weekday == DateTime.sunday;
 
            String status;
 
@@ -116,6 +118,9 @@ if (rawStatus == "leave") {
 }
 else if (isDbHoliday) {
   status = "holiday";
+}
+else if (isSunday) {
+  status = "weekend";
 }
 /// 🔥 ABSENT MUST COME BEFORE APPROVED
 else if (isAfter11 && !hasPunchedIn) {
@@ -182,6 +187,12 @@ else {
   textColor = AppColors.red;
   icon = Icons.cancel_rounded;
   statusText = "Absent";
+  break;
+  case 'weekend':
+  bgColor = Colors.blue.shade100;
+  textColor = Colors.blue;
+  icon = Icons.weekend;
+  statusText = "Weekend";
   break;
 
  
@@ -308,6 +319,15 @@ return Center(
                               : leave['status'] == 'rejected'
                                   ? Colors.red
                                   : Colors.orange;
+                                  final now = DateTime.now();
+final endDate = DateTime.parse(leave['end_date']);
+
+final leaveOver = now.isAfter(
+  DateTime(endDate.year, endDate.month, endDate.day),
+);
+
+final isExpiredPending =
+    leaveOver && leave['status'] == 'pending';
 
                       return Center(
                         child: Container(
@@ -377,12 +397,31 @@ return Center(
                                   "From: ${leave['start_date']}  To: ${leave['end_date']}"),
                               const SizedBox(height: 8),
                               Text(
-                                "Status: ${leave['status']}",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: statusColor,
-                                ),
-                              ),
+  "Status: ${isExpiredPending
+      ? 'ABSENT'
+      : leave['status'].toString().toUpperCase()}",
+  style: TextStyle(
+    fontWeight: FontWeight.bold,
+    color: isExpiredPending
+        ? Colors.red
+        : statusColor,
+  ),
+),
+Text(
+  isExpiredPending
+      ? "Unpaid Leave"
+      : (leave['leave_type'] == 'paid'
+          ? "Paid Leave"
+          : "Unpaid Leave"),
+  style: TextStyle(
+    fontWeight: FontWeight.bold,
+    color: isExpiredPending
+        ? Colors.red
+        : (leave['leave_type'] == 'paid'
+            ? Colors.green
+            : Colors.red),
+  ),
+),
                             ],
                           ),
                         ),

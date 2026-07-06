@@ -28,62 +28,67 @@ class _EmployeeListPageState extends State<EmployeeListPage> {
 
   Future<void> updateRole(String userId, String newRole) async {
     try {
-      await supabase.from('users').update({'role': newRole}).eq('id', userId);
+      // 🔥 Clean and sanitize the string to completely avoid check constraint issues
+      final sanitizedRole = newRole.trim().toLowerCase();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Role Updated Successfully")),
-      );
+      await supabase
+          .from('users')
+          .update({'role': sanitizedRole})
+          .eq('id', userId);
 
-      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Role Updated Successfully")),
+        );
+        setState(() {});
+      }
     } catch (e) {
-      
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Update failed: $e")),
+        );
+      }
     }
   }
 
-Future<void> deleteUser(String userId) async {
-  final currentUser = supabase.auth.currentUser;
-  final currentRole = context.read<PunchProvider>().role;
+  Future<void> deleteUser(String userId) async {
+    final currentUser = supabase.auth.currentUser;
+    final isSelfDelete = currentUser?.id == userId;
 
-  final isSelfDelete = currentUser?.id == userId;
+    try {
+      await supabase.from('users').delete().eq('id', userId);
 
-  try {
-    final response = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId)
-        .select();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("User Deleted Successfully")),
+        );
+      }
 
-    print("DELETE RESPONSE: $response");
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("User Deleted Successfully")),
-    );
-
-    // 🔥 IMPORTANT: logout if self delete
-    if (isSelfDelete) {
-      await supabase.auth.signOut();
-
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-        (route) => false,
-      );
-    } else {
-      setState(() {});
+      if (isSelfDelete) {
+        await supabase.auth.signOut();
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginPage()),
+            (route) => false,
+          );
+        }
+      } else {
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Delete failed: $e")),
+        );
+      }
     }
-  } catch (e) {
-    print("DELETE ERROR: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Delete failed: $e")),
-    );
   }
-}Widget build(BuildContext context) {
+
+  @override
+  Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final currentRole = context.watch<PunchProvider>().role;
-    // ignore: unused_local_variable
-    final punch = Provider.of<PunchProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Employees"),
@@ -109,7 +114,7 @@ Future<void> deleteUser(String userId) async {
         future: fetchUsers(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-             return const SkeletonEmployeeList();
+            return const SkeletonEmployeeList();
           }
 
           final users = snapshot.data!;
@@ -126,9 +131,8 @@ Future<void> deleteUser(String userId) async {
 
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                padding: EdgeInsets.all(12),
+                padding: const EdgeInsets.all(12),
                 height: size.height * 0.133,
-                width: size.width * 0.3,
                 decoration: BoxDecoration(
                   color: AppColors.white,
                   borderRadius: BorderRadius.circular(10),
@@ -136,31 +140,25 @@ Future<void> deleteUser(String userId) async {
                     BoxShadow(
                       color: AppColors.lightgrey,
                       blurRadius: 2,
-                      offset: Offset(0, 0),
+                      offset: const Offset(0, 0),
                     ),
                   ],
                 ),
                 child: Row(
                   children: [
-                    /// Profile Circle
                     CircleAvatar(
                       radius: size.width * 0.06,
                       backgroundColor: Colors.grey.shade200,
-                      backgroundImage:
-                          user['profile_image_url'] != null &&
+                      backgroundImage: user['profile_image_url'] != null &&
                               user['profile_image_url'].toString().isNotEmpty
                           ? NetworkImage(user['profile_image_url'])
                           : null,
-                      child:
-                          user['profile_image_url'] == null ||
+                      child: user['profile_image_url'] == null ||
                               user['profile_image_url'].toString().isEmpty
                           ? const Icon(Icons.person, size: 40)
                           : null,
                     ),
-
-                    SizedBox(width: size.width * 0.08),
-
-                    /// User Details
+                    const SizedBox(width: 24),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,14 +170,12 @@ Future<void> deleteUser(String userId) async {
                               fontSize: 16,
                             ),
                           ),
-                          SizedBox(height: size.height * 0.01),
+                          SizedBox(height: size.height * 0.005),
                           Text(
                             "Department: ${user['department'] ?? ''}",
-                            style: const TextStyle(color: Colors.grey),
+                            style: const TextStyle(color: Colors.grey, fontSize: 13),
                           ),
-                          SizedBox(height: size.height * 0.01),
-
-                          /// Role Badge
+                          SizedBox(height: size.height * 0.008),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
@@ -189,87 +185,97 @@ Future<void> deleteUser(String userId) async {
                               color: user['role'] == 'superadmin'
                                   ? Colors.red.shade100
                                   : user['role'] == 'admin'
-                                  ? Colors.purple.shade100
-                                  : user['role'] == 'hr'
-                                  ? Colors.orange.shade100
-                                  : user['role'] == 'intern'
-                                  ? Colors.blue.shade100
-                                  : Colors.green.shade100,
+                                      ? Colors.purple.shade100
+                                      : user['role'] == 'hr'
+                                          ? Colors.orange.shade100
+                                          : user['role'] == 'intern'
+                                              ? Colors.blue.shade100
+                                              : Colors.green.shade100,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               (user['role'] ?? '').toUpperCase(),
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: user['role'] == 'superadmin'
                                     ? Colors.red
                                     : user['role'] == 'admin'
-                                    ? Colors.purple
-                                    : user['role'] == 'hr'
-                                    ? Colors.orange
-                                    : user['role'] == 'intern'
-                                    ? Colors.blue
-                                    : Colors.green,
+                                        ? Colors.purple
+                                        : user['role'] == 'hr'
+                                            ? Colors.orange
+                                            : user['role'] == 'intern'
+                                                ? Colors.blue
+                                                : Colors.green,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    /// Admin Controls
                     if (currentRole == 'superadmin' ||
                         currentRole == 'admin' ||
                         currentRole == 'hr')
                       PopupMenuButton<String>(
-  onSelected: (value) async {
-    if (value == 'delete') {
+                        onSelected: (value) async {
+                          if (value == 'delete') {
+                            bool confirm = await confirmAction(
+                              "Confirm you want to delete ${user['name']}?",
+                            );
+                            if (confirm) {
+                              await deleteUser(user['id']);
+                            }
+                          } else {
+                            // 🔥 Dynamic string formatting for confirmation popup messages
+                            String roleText = value == "superadmin"
+                                ? "Super Admin"
+                                : value == "admin"
+                                    ? "Admin"
+                                    : value == "hr"
+                                        ? "HR"
+                                        : value == "intern"
+                                            ? "Intern"
+                                            : "Employee";
 
-      bool confirm = await confirmAction(
-        "Confirm you want delete ${user['name']} ?",
-      );
-
-      if (confirm) {
-        await deleteUser(user['id']);
-      }
-
-    } else {
-      String roleText = value == "admin"
-          ? "Admin"
-          : value == "hr"
-          ? "HR"
-          : "Employee";
-
-      bool confirm = await confirmAction(
-        "Confirm you want make ${user['name']} $roleText ?",
-      );
-
-      if (confirm) {
-        await updateRole(user['id'], value);
-      }
-    }
-  },
-
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
+                            bool confirm = await confirmAction(
+                              "Confirm you want to make ${user['name']} $roleText?",
+                            );
+                            if (confirm) {
+                              await updateRole(user['id'], value);
+                            }
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          // 🔥 Super Admin Option Available in Context Menu UI
+                          const PopupMenuItem(
+                            value: 'superadmin',
+                            child: Text("Make Super Admin"),
+                          ),
+                          const PopupMenuItem(
                             value: 'admin',
                             child: Text("Make Admin"),
                           ),
-                          PopupMenuItem(value: 'hr', child: Text("Make HR")),
-                          PopupMenuItem(
+                          const PopupMenuItem(
+                            value: 'hr',
+                            child: Text("Make HR"),
+                          ),
+                          const PopupMenuItem(
                             value: 'employee',
                             child: Text("Make Employee"),
                           ),
-                          PopupMenuItem(
+                          const PopupMenuItem(
+                            value: 'intern',
+                            child: Text("Make Intern"),
+                          ),
+                          const PopupMenuItem(
                             value: 'delete',
                             child: Text(
                               "Delete User",
-                              style: TextStyle(color: Colors.red),
+                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
-                      ), 
+                      ),
                   ],
                 ),
               );
@@ -298,7 +304,6 @@ Future<void> deleteUser(String userId) async {
         ],
       ),
     );
-
     return result ?? false;
   }
 }

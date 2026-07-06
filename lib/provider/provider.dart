@@ -123,6 +123,7 @@ int get totalPendingEmployeesToday =>
     ) async {
       await loadAllAttendance();
 await loadTodayAllAttendance();
+await fetchLeaveList();
 await loadTodayPunch();
 
 if (role == 'superadmin' ||
@@ -265,6 +266,7 @@ Future<void> loadAllPendingCount() async {
       print("Error loading profile: $e");
     }
   }
+  
 Future<void> saveAbsentAndLeaveForToday() async {
   print("saveAbsentAndLeaveForToday called");
 
@@ -340,24 +342,7 @@ if (isHoliday(now)) {
 
   int deduction = 0;
 
-  if (leave == null) {
-    switch (userRole) {
-      case 'intern':
-        deduction = 3000 ~/ 30;
-        break;
-      case 'employee':
-        deduction = 4000 ~/ 30;
-        break;
-      case 'hr':
-        deduction = 5000 ~/ 30;
-        break;
-      case 'admin':
-        deduction = 8000 ~/ 30;
-        break;
-      default:
-        deduction = 0;
-    }
-  }
+  
 print("DEVICE TIME: $now");
 print("ISO TIME: ${now.toIso8601String()}");
   await supabase.from('attendance').upsert({
@@ -1708,34 +1693,31 @@ if (!hasValidPunch && !isOnLeave) {
 
     notifyListeners();
   }
+List<Map<String, dynamic>> get currentMonthLeaveEmployeesList {
+  List<Map<String, dynamic>> expandedList = [];
 
-  List<Map<String, dynamic>> get currentMonthLeaveEmployeesList {
-    final now = DateTime.now();
-    List<Map<String, dynamic>> expandedList = [];
+  for (final leave in leaveList) {
+    if (leave['start_date'] == null || leave['end_date'] == null) continue;
+    
+    final startDate = DateTime.parse(leave['start_date']);
+    final endDate = DateTime.parse(leave['end_date']);
 
-    for (final leave in leaveList) {
-      final startDate = DateTime.parse(leave['start_date']);
-      final endDate = DateTime.parse(leave['end_date']);
+    for (
+      DateTime d = startDate;
+      !d.isAfter(endDate);
+      d = d.add(const Duration(days: 1))
+    ) {
+      // 🔥 FIX: Match against selectedMonth instead of hardcoded current month
+      if (d.month != selectedMonth.month || d.year != selectedMonth.year) continue;
 
-      for (
-        DateTime d = startDate;
-        !d.isAfter(endDate);
-        d = d.add(const Duration(days: 1))
-      ) {
-        if (d.month != now.month || d.year != now.year) continue;
-
-        final item = Map<String, dynamic>.from(leave);
-
-        /// override date so UI shows each day
-        item['start_date'] = d.toIso8601String();
-
-        expandedList.add(item);
-      }
+      final item = Map<String, dynamic>.from(leave);
+      item['start_date'] = d.toIso8601String();
+      expandedList.add(item);
     }
-
-    return expandedList;
   }
-  
+
+  return expandedList;
+} 
 // ================================
 // EMPLOYEE / INTERN - MONTH WISE
 // ================================

@@ -143,6 +143,7 @@ if (provider.role == 'superadmin' ||
     isFirstLoad = false;
   });
 }
+
 bool isHolidayToday(List holidays) {
   final today = DateTime.now();
   final todayStr =
@@ -152,46 +153,61 @@ bool isHolidayToday(List holidays) {
       h['holiday_date'].toString().split("T")[0] == todayStr);
 }
 
-
-  @override
   Widget build(BuildContext context) {
-  super.build(context);
+    super.build(context);
     final size = MediaQuery.of(context).size;
     final punch = context.watch<PunchProvider>();
-  
- final hasData = chartData.values.any((v) => v > 0);
+  final isSunday = DateTime.now().weekday == DateTime.sunday;
+    final hasData = chartData.values.any((v) => v > 0);
     if (isSummaryLoading && isFirstLoad) {
-  return const WorkdayLoader();
-}
+      return const WorkdayLoader();
+    }
     final role = punch.role;
-    print("Total Absent Count: ${punch.totalAbsentEmployees}");
 
     return Scaffold(
       body: RefreshIndicator(
- onRefresh: () async {
-  final provider = context.read<PunchProvider>();
+        color: AppColors.royalblue,
+        backgroundColor: Colors.white,
+        onRefresh: () async {
+          final provider = context.read<PunchProvider>();
 
-  await provider.initializeApp();
+          // 1. Re-initialize baseline profile and session mappings
+          await provider.initializeApp();
 
-  if (provider.role == 'admin' ||
-      provider.role == 'hr' ||
-      provider.role == 'superadmin') {
-    await provider.loadSuperAdminStats();
-  }
+         
+          if (provider.role == 'employee' || provider.role == 'intern') {
+            final now = DateTime.now();
+            await provider.loadMonthlyAttendance(
+              DateTime(now.year, now.month),
+            );
+          } else if (provider.role == 'admin' ||
+              provider.role == 'hr' ||
+              provider.role == 'superadmin') {
+            await provider.loadSuperAdminStats();
+            await provider.loadAllPendingCount();
+          }
 
-  await _loadChart(provider); // 🔥 MUST
+          // 3. Re-calculate metrics to sync rendering components
+          await _loadChart(provider);
 
-
-  setState(() {});
-},
+          // 4. Force state rebuild once data pipelines successfully sync back down
+          if (mounted) {
+            setState(() {});
+          }
+        },
         child: Stack(
           children: [
             isLoading
-                ? Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator())
                 : SingleChildScrollView(
+                    // 🔥 FIX: This forces the RefreshIndicator scroll physics to trigger 
+                    // even if your widgets don't overflow past the screen height!
+                    physics: const AlwaysScrollableScrollPhysics(),
                     child: Column(
                       children: [
                         SizedBox(height: size.height * 0.06),
+                        
+                       
 
                         /// ---------------- HEADER ----------------
                         Row(
@@ -279,8 +295,10 @@ bool isHolidayToday(List holidays) {
 
                             ///  Notification ONLY FOR EMPLOYEE
                             if (role == 'employee' ||
+                                role == 'superadmin' ||
                                 role == 'admin' ||
                                 role == 'hr' ||
+                                
                                 role == 'intern')
                               Padding(
                                 padding: const EdgeInsets.only(right: 16),
@@ -450,9 +468,67 @@ bool isHolidayToday(List holidays) {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              SizedBox(height: size.height * 0.1),
+                               SizedBox(height: size.height * 0.03),
+Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 12),
+  child: Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.royalblue.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        /// NAME
+        Text(
+          "Welcome, Super Admin",
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppColors.royalblue,
+          ),
+        ),
 
-                              /// MONTH SELECTOR + CALENDAR
+        const SizedBox(height: 4),
+
+        /// SUBTITLE
+        const Text(
+          "Manage your organization at a glance",
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.black54,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        /// BADGE
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 4,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.royalblue,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Text(
+            "Admin Dashboard",
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
+),
+                               SizedBox(height: size.height * 0.05),
+                               /// MONTH SELECTOR + CALENDAR
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -590,15 +666,22 @@ bool isHolidayToday(List holidays) {
 
                          SizedBox(height: size.height * 0.02),
 
-isSummaryLoading
-    ? const SummaryRowSkeleton()
-    : SummaryRow(
-        leftCard: SummaryCard(
-          value: punch.totalEmployees.toString(),
-          title: "Total Employees",
-          valueColor: Colors.green,
-          onTap: () {},
-        ),
+ SummaryRow(
+                              leftCard: SummaryCard(
+                                value: punch.totalEmployees.toString(),
+                                title: "Total Employees",
+                                valueColor: AppColors.green,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => EmployeesDetailsPage(
+                                        month: selectedMonth,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
         rightCard: SummaryCard(
           value: punch.pendingCount.toString(),
           title: "Pending",
@@ -615,8 +698,7 @@ isSummaryLoading
       ),
 
                           SizedBox(height: size.height * 0.015),
-                          
-                          SummaryRow(
+                         SummaryRow(
                             leftCard: SummaryCard(
                               value: punch.totalAbsentEmployees.toString(),
                               title: "Absent ", //future absent count
@@ -867,8 +949,7 @@ isSummaryLoading
                                 },
                               ),
                               rightCard: SummaryCard(
-                                value: punch.totalLeaveEmployees
-                                    .toString(), //future leave count
+                                value: punch.currentMonthLeaveEmployeesList.length.toString(),
                                 title: "On Leave",
                                 valueColor: AppColors.royalblue,
                                 onTap: () {
@@ -1089,7 +1170,9 @@ isChartLoading
 
                          
 
- if (!isHoliday && punch.punchStatus != "leave"&&
+if (!isHoliday &&
+    !isSunday &&
+    punch.punchStatus != "leave" &&
     punch.punchStatus != "absent")
   Padding(
     padding: const EdgeInsets.all(12),

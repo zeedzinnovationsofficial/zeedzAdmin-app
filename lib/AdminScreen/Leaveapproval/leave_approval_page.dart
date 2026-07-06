@@ -91,7 +91,7 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final role = context.watch<PunchProvider>().role;
-
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text("Leave Requests"),
@@ -140,10 +140,17 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
               child: filteredLeaves.isEmpty
                   ? const Center(child: Text("No Leave Requests"))
                   : ListView.builder(
+                    padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 80,
+        ),
                       itemCount: filteredLeaves.length,
                       itemBuilder: (context, index) {
                         final leave = filteredLeaves[index];
-
+                        final today = DateTime.now();
+                        final endDate = DateTime.parse(leave['end_date']);
+                       final leaveOver = today.isAfter(
+                       DateTime(endDate.year, endDate.month, endDate.day),
+                        );
                         return Container(
                           margin: const EdgeInsets.symmetric(
                             horizontal: 15,
@@ -212,7 +219,9 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                               SizedBox(height: size.height * 0.01),
 
                               Text(
-                                "Status: ${leave['status'].toString().toUpperCase()}",
+                                  "Status: ${(leaveOver && leave['status'] == 'pending')      
+                                  ? 'ABSENT'
+                                   : leave['status'].toString().toUpperCase()}",
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: leave['status'] == 'approved'
@@ -224,7 +233,9 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                               ),
 
                               Text(
-                                "Type: ${leave['leave_type'] ?? '--'}",
+                                  "Type: ${(leaveOver && leave['status'] == 'pending')
+                                    ? 'UNPAID'    
+                                    : (leave['leave_type'] ?? '--')}",
                                 style: TextStyle(
                                   color: leave['leave_type'] == ''
                                       ? Colors.green
@@ -232,9 +243,9 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-
-                              if ((role == 'admin' || role == 'hr') &&
-                                  leave['status'] == 'pending')
+                              if ((role == 'admin' || role == 'hr' || role == 'superadmin') &&
+                                leave['status'] == 'pending' &&   
+                                 !leaveOver)
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
@@ -267,11 +278,9 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
 
                                         if (leaveType != null) {
                                           await approveLeave(
-
-  leave['id'],
-  leave['user_id'],
-  leaveType,
-);
+                                            leave['id'], 
+                                            leave['user_id'],
+                                            leaveType,);
                                         }
                                       },
                                       child: const Text(
@@ -284,7 +293,6 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                                       onPressed: () async {
                                         final controller =
                                             TextEditingController();
-
                                         showDialog(
                                           context: context,
                                           builder: (context) {
@@ -308,9 +316,7 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                                                     final reason =
                                                         controller.text.trim();
                                                     if (reason.isEmpty) return;
-
                                                     Navigator.pop(context);
-
                                                     await rejectLeave(
                                                       leave['id'],
                                                       leave['user_id'],
@@ -335,9 +341,12 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                                     ),
                                   ],
                                 ),
+                                
                             ],
                           ),
+                          
                         );
+                        
                       },
                     ),
             ),
@@ -360,7 +369,6 @@ Future<void> approveLeave( dynamic leaveId,
          })
           .eq('id', leaveId)
            .select();
-
     if (updated.isEmpty) {
       throw Exception('Approval failed (check RLS or invalid id)');
     }
@@ -368,6 +376,43 @@ Future<void> approveLeave( dynamic leaveId,
     .select('start_date, end_date')
      .eq('id', leaveId) 
      .single();
+     double monthlySalary = await supabase
+    .from('users')
+    .select('salary')
+    .eq('id', userId)
+    .single()
+    .then((value) => (value['salary'] ?? 0).toDouble());
+
+final cycleStart = DateTime(DateTime.now().year, DateTime.now().month, 1);
+final cycleEnd = DateTime(
+  DateTime.now().year,
+  DateTime.now().month + 1,
+  1,
+).subtract(const Duration(days: 1));
+final holidayResponse = await supabase
+    .from('holidays')
+    .select('holiday_date');
+
+List<String> holidays = holidayResponse
+    .map<String>((e) => e['holiday_date'].toString().split('T')[0])
+    .toList();
+
+int payableDays = 0;
+
+for (DateTime d = cycleStart;
+    !d.isAfter(cycleEnd);
+    d = d.add(const Duration(days: 1))) {
+  bool isSunday = d.weekday == DateTime.sunday;
+  bool isHoliday = holidays.contains(
+      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}");
+
+  if (!isSunday && !isHoliday) {
+    payableDays++;
+  }
+}
+
+double perDayAmount =
+    payableDays > 0 ? monthlySalary / payableDays : 0;
       final DateTime startDate = DateTime.parse(leave['start_date'])
       .toLocal();
        final DateTime endDate = DateTime.parse(leave['end_date'])
@@ -382,27 +427,40 @@ Future<void> approveLeave( dynamic leaveId,
       .from('attendance')
       .select('id,status')
       .eq('user_id', userId)
-      .eq('date', onlyDate.toIso8601String())
+      .eq(
+  'date',
+  "${onlyDate.year.toString().padLeft(4,'0')}-"
+  "${onlyDate.month.toString().padLeft(2,'0')}-"
+  "${onlyDate.day.toString().padLeft(2,'0')}"
+)
       .maybeSingle();
 
   if (existing != null) {
     // 🔥 ALWAYS UPDATE (even if already absent)
     await supabase.from('attendance').update({
       'status': 'leave',
-      'earned_amount': 0,
-      'deductions': leaveType == 'unpaid' ? 100 : 0,
+      'earned_amount': leaveType == 'paid' ? perDayAmount : 0,
+'deductions': leaveType == 'unpaid' ? perDayAmount : 0,
       'approved_at': DateTime.now().toIso8601String(),
     }).eq('id', existing['id']);
 
   } else {
-    await supabase.from('attendance').insert({
-      'user_id': userId,
-        'date': onlyDate.toIso8601String(),
-      'status': 'leave',
-      'earned_amount': 0,
-      'deductions': leaveType == 'unpaid' ? 100 : 0,
-      'approved_at': DateTime.now().toIso8601String(),
-    });
+   print("INSERTING LEAVE");
+print("userId = $userId");
+print("date = $onlyDate");
+print("status = leave");
+
+await supabase.from('attendance').insert({
+  'user_id': userId,
+  'date':
+      "${onlyDate.year.toString().padLeft(4, '0')}-"
+      "${onlyDate.month.toString().padLeft(2, '0')}-"
+      "${onlyDate.day.toString().padLeft(2, '0')}",
+  'status': 'leave',
+  'earned_amount': leaveType == 'paid' ? perDayAmount : 0,
+  'deductions': leaveType == 'unpaid' ? perDayAmount : 0,
+  'approved_at': DateTime.now().toIso8601String(),
+});
   }
 }
 // 🔥 RELOAD DASHBOARD STATS
@@ -413,7 +471,13 @@ await provider.loadStatsByMonth(
 );
 
 await provider.loadSuperAdminStats(); // admin/hr dashboard counts
-
+await supabase.from('notifications').insert({
+  'user_id': userId,
+  'title': 'Leave Approved',
+  'message':
+      'Your leave has been approved as ${leaveType == 'paid' ? 'Paid Leave' : 'Unpaid Leave'}.',
+  'created_at': DateTime.now().toIso8601String(),
+});
     await loadLeaves();
 
     if (mounted) {
@@ -424,7 +488,12 @@ await provider.loadSuperAdminStats(); // admin/hr dashboard counts
         ),
       );
     }
-  } catch (e) {
+ } on PostgrestException catch (e) {
+  print("MESSAGE = ${e.message}");
+  print("DETAILS = ${e.details}");
+  print("HINT = ${e.hint}");
+  print("CODE = ${e.code}");
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

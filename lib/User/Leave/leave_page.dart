@@ -10,7 +10,6 @@ import 'package:zeedz_attendance/User/Leave/widget/submit_button.dart';
 
 class LeavePage extends StatefulWidget {
   const LeavePage({super.key});
-
   @override
   State<LeavePage> createState() => _LeavePageState();
 }
@@ -26,7 +25,6 @@ class _LeavePageState extends State<LeavePage> {
 
   Future<void> loadData() async {
     final provider = context.read<PunchProvider>();
-
     setState(() {
       isLoading = true;
     });
