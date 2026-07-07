@@ -9,11 +9,18 @@ import 'package:flutter/services.dart';
 class SalaryPdfService {
   pw.Font? notoFont;
 
-  Future<void> loadFont() async {
-    notoFont = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
-    );
+ Future<void> loadFont() async {
+  try {
+    final data =
+        await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+
+    print("Font loaded: ${data.lengthInBytes}");
+
+    notoFont = pw.Font.ttf(data);
+  } catch (e) {
+    print("Font error: $e");
   }
+}
 
   Map<String, List<Map<String, dynamic>>> groupByMonth(
       List<Map<String, dynamic>> data) {

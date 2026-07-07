@@ -61,9 +61,35 @@ class PunchHandler {
       final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
       final userId = Supabase.instance.client.auth.currentUser!.id;
 
-   
+   // Get current location
+bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+if (!serviceEnabled) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text("Please turn ON Location")),
+  );
+  await Geolocator.openLocationSettings();
+  return;
+}
+
+LocationPermission permission = await Geolocator.checkPermission();
+if (permission == LocationPermission.denied) {
+  permission = await Geolocator.requestPermission();
+}
+
+final position = await Geolocator.getCurrentPosition();
+
+final placemarks = await placemarkFromCoordinates(
+  position.latitude,
+  position.longitude,
+);
+
+final place = placemarks.first;
+
+final address =
+    "${place.locality}, ${place.administrativeArea}, ${place.country}";
       await Supabase.instance.client.from('attendance').update({
         'punch_out': now.toIso8601String(),
+        'punch_out_location': address,
       }).eq('user_id', userId).eq('date', todayStr);
 
       
