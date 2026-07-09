@@ -91,7 +91,8 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final role = context.watch<PunchProvider>().role;
-    
+  final now = DateTime.now();
+    final isBefore10AM = now.hour < 10;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Leave Requests"),
@@ -146,11 +147,17 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                       itemCount: filteredLeaves.length,
                       itemBuilder: (context, index) {
                         final leave = filteredLeaves[index];
-                        final today = DateTime.now();
                         final endDate = DateTime.parse(leave['end_date']);
-                       final leaveOver = today.isAfter(
-                       DateTime(endDate.year, endDate.month, endDate.day),
-                        );
+
+final cutoff = DateTime(
+  endDate.year,
+  endDate.month,
+  endDate.day,
+  10, // 10:00 AM
+  0,
+);
+
+final leaveOver = now.isAfter(cutoff);
                         return Container(
                           margin: const EdgeInsets.symmetric(
                             horizontal: 15,
@@ -243,9 +250,14 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              if ((role == 'admin' || role == 'hr' || role == 'superadmin') &&
-                                leave['status'] == 'pending' &&   
-                                 !leaveOver)
+                             
+
+
+
+if ((role == 'admin' || role == 'hr' || role == 'superadmin') &&
+    leave['status'] == 'pending' &&
+    !leaveOver &&
+    isBefore10AM)
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
@@ -354,11 +366,34 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
   }
 
   // ===================== APPROVE =====================
-Future<void> approveLeave( dynamic leaveId,
- String userId,
-  String leaveType, ) 
-  async {
-     try { 
+Future<void> approveLeave(
+  dynamic leaveId,
+  String userId,
+  String leaveType,
+) async {
+
+  // 👇 PUT HERE
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const AlertDialog(
+      content: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Text("Processing leave approval...")
+          ),
+        ],
+      ),
+    ),
+  );
+
+  try {
       final supabase = Supabase.instance.client;
 
     final updated = await supabase .from('leave_requests')
@@ -480,21 +515,21 @@ await supabase.from('notifications').insert({
 });
     await loadLeaves();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Leave approved successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
+if (mounted) {
+  Navigator.pop(context); // 👈 Close processing dialog
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Leave approved successfully'),
+      backgroundColor: Colors.green,
+    ),
+  );
+}
  } on PostgrestException catch (e) {
-  print("MESSAGE = ${e.message}");
-  print("DETAILS = ${e.details}");
-  print("HINT = ${e.hint}");
-  print("CODE = ${e.code}");
+  
 
     if (mounted) {
+          Navigator.pop(context); 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Approve failed: $e'),

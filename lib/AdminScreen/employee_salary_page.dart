@@ -296,7 +296,7 @@ final isAfter11 = now.isAfter(cutoffTime);
     final response = await supabase
         .from('attendance')
         .select('id,punch_in,punch_out,status,date,earned_amount,deductions')
-        .eq('user_id', selectedUserId)
+        .eq('user_id', selectedUserId)                                
         .eq('date', todayDate);
 
     final attendance = response.isNotEmpty ? response.first : null;
@@ -430,23 +430,49 @@ if (isAfter11) {
           "amount": "+ ₹${finalExtraEarning.toStringAsFixed(2)}",
           "amountColor": Colors.green,
         },
-        if (isAfter11)
+      if (todayLeave != null)
+  {
+    "icon": Icons.event_available,
+    "iconColor": todayLeave['leave_type'] == 'paid'
+        ? Colors.green
+        : Colors.red,
+    "title": todayLeave['leave_type'] == 'paid'
+        ? "Paid Leave"
+        : "Unpaid Leave",
+    "subtitle": "Approved leave",
+    "amount": todayLeave['leave_type'] == 'paid'
+        ? "+ ₹${perDay.toStringAsFixed(2)}"
+        : "- ₹${perDay.toStringAsFixed(2)}",
+    "amountColor": todayLeave['leave_type'] == 'paid'
+        ? Colors.green
+        : Colors.red,
+  }
+else if (attendance != null && attendance['punch_in'] != null)
+  {
+    "icon": Icons.check_circle,
+    "iconColor": Colors.green,
+    "title": "Punched In",
+    "subtitle": "Attendance marked",
+    "amount": "₹0",
+    "amountColor": Colors.green,
+  }
+else if (isAfter11)
   {
     "icon": Icons.event_busy,
     "iconColor": Colors.red,
     "title": "Unpaid Leave",
-    "subtitle": leaveDeductionLocal > 0 ? "Full day leave" : "No leave",
+    "subtitle": "Not Punched In",
     "amount": "- ₹${leaveDeductionLocal.toStringAsFixed(2)}",
     "amountColor": Colors.red,
   }
 else
   {
-    "icon": Icons.event_busy,
-    "iconColor": Colors.grey,
-    "title": "Unpaid Leave",
-    "subtitle": "Not Punchedin",
-    "amount": "- ₹0",
-    "amountColor": Colors.grey,
+    "icon": Icons.access_time,
+    "iconColor": Colors.orange,
+    "title": "Not Punched In",
+    "subtitle": "Waiting for punch in",
+    "amount": "₹0",
+    "amountColor": Colors.orange,
   },
         {
           "icon": Icons.hourglass_bottom,
