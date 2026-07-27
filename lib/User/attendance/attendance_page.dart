@@ -513,7 +513,22 @@ else if (record.isNotEmpty) {
     punchOut = DateTime.parse(record['punch_out']);
   }
 }
+else {
+  if (date.year == now.year &&
+      date.month == now.month &&
+      date.day == now.day) {
 
+    final cutoff = DateTime(now.year, now.month, now.day, 11);
+
+    if (now.isBefore(cutoff)) {
+      status = "not_punched";
+    } else {
+      status = "absent";
+    }
+  } else {
+    status = "absent";
+  }
+}
 // No attendance record
 
 

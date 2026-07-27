@@ -320,14 +320,21 @@ return Center(
                                   ? Colors.red
                                   : Colors.orange;
                                   final now = DateTime.now();
-final endDate = DateTime.parse(leave['end_date']);
 
-final leaveOver = now.isAfter(
-  DateTime(endDate.year, endDate.month, endDate.day),
+
+final startDate = DateTime.parse(leave['start_date']).toLocal();
+
+final approvalCutoff = DateTime(
+  startDate.year,
+  startDate.month,
+  startDate.day,
+  10,
+  0,
 );
 
 final isExpiredPending =
-    leaveOver && leave['status'] == 'pending';
+    now.isAfter(approvalCutoff) &&
+    leave['status'] == 'pending';
 
                       return Center(
                         child: Container(

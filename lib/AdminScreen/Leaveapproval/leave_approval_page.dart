@@ -92,7 +92,6 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
     final size = MediaQuery.of(context).size;
     final role = context.watch<PunchProvider>().role;
   final now = DateTime.now();
-    final isBefore10AM = now.hour < 10;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Leave Requests"),
@@ -147,17 +146,18 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
                       itemCount: filteredLeaves.length,
                       itemBuilder: (context, index) {
                         final leave = filteredLeaves[index];
-                        final endDate = DateTime.parse(leave['end_date']);
 
-final cutoff = DateTime(
-  endDate.year,
-  endDate.month,
-  endDate.day,
-  10, // 10:00 AM
+final startDate = DateTime.parse(leave['start_date']).toLocal();
+
+final approvalCutoff = DateTime(
+  startDate.year,
+  startDate.month,
+  startDate.day,
+  10,
   0,
 );
 
-final leaveOver = now.isAfter(cutoff);
+final canApprove = now.isBefore(approvalCutoff);
                         return Container(
                           margin: const EdgeInsets.symmetric(
                             horizontal: 15,
@@ -226,7 +226,7 @@ final leaveOver = now.isAfter(cutoff);
                               SizedBox(height: size.height * 0.01),
 
                               Text(
-                                  "Status: ${(leaveOver && leave['status'] == 'pending')      
+                                  "Status: ${(!canApprove && leave['status'] == 'pending')      
                                   ? 'ABSENT'
                                    : leave['status'].toString().toUpperCase()}",
                                 style: TextStyle(
@@ -240,7 +240,7 @@ final leaveOver = now.isAfter(cutoff);
                               ),
 
                               Text(
-                                  "Type: ${(leaveOver && leave['status'] == 'pending')
+                                  "Type: ${(!canApprove && leave['status'] == 'pending')
                                     ? 'UNPAID'    
                                     : (leave['leave_type'] ?? '--')}",
                                 style: TextStyle(
@@ -256,8 +256,7 @@ final leaveOver = now.isAfter(cutoff);
 
 if ((role == 'admin' || role == 'hr' || role == 'superadmin') &&
     leave['status'] == 'pending' &&
-    !leaveOver &&
-    isBefore10AM)
+    canApprove)
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [

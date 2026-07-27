@@ -57,19 +57,13 @@ class LeaveHistory extends StatelessWidget {
           statusColor = Colors.blue;
           break;
 
-        case 'not punchin':
-        case 'no punchin today':
-          if (isToday) {
-            statusText = "Not Punch In";
-            statusBg = Colors.grey.shade200;
-            statusColor = Colors.grey;
-          } else {
-            /// 🔥 PAST DAY → ABSENT
-            statusText = "Absent";
-            statusBg = Colors.red.shade100;
-            statusColor = Colors.red;
-          }
-          break;
+        case 'not_punched':
+case 'not punchin':
+case 'no punchin today':
+  statusText = "Not Punch In";
+  statusBg = Colors.grey.shade200;
+  statusColor = Colors.grey;
+  break;
 
         case 'rejected':
         case 'absent':

@@ -64,6 +64,7 @@ Map<String, int> calculateCycleSummary() {
 final year = now.year;
 
 final monthDates = getMonthDates(selectedMonth, year);
+monthDates.sort((a, b) => b.compareTo(a));
 
   for (final d in monthDates) {
     // 🔴 JOINING DATE CHECK (FIRST)
